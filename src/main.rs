@@ -15,7 +15,6 @@ use std::net::SocketAddr;
 /// Our global unique user id counter.
 static NEXT_USER_ID: AtomicUsize = AtomicUsize::new(1);
 
-
 /// Our state of currently connected users.
 ///
 /// - Key is their id
@@ -29,7 +28,6 @@ async fn main() {
     // Keep track of all connected users, key is usize, value
     // is a websocket sender.
     let users = Users::default();
-
     // Turn our "state" into a new Filter...
     let users = warp::any().map(move || users.clone());
 
