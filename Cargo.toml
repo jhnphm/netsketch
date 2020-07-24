@@ -1,5 +1,5 @@
 [package]
-name = "netsketch-server"
+name = "netsketch"
 version = "0.1.0"
 authors = ["John Pham <jhnphm@gmail.com>"]
 edition = "2018"

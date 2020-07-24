@@ -3,40 +3,37 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
+use warp::ws::Message as WsMessage;
 use tokio::sync::{mpsc, RwLock};
 use std::vec::Vec;
 use std::str;
 
-/// Our global unique user id counter.
-static NEXT_USER_ID: AtomicUsize = AtomicUsize::new(1);
 
 
-struct User {
-    name: String 
+pub struct User {
+    pub name: String 
     // todo- password? 
 }
 
-struct Connection {
-    user: User,
-    sender: mpsc::UnboundedSender<Result<Message, warp::Error>>
+pub struct Connection {
+    pub user: User,
+    pub sender: mpsc::UnboundedSender<Result<WsMessage, warp::Error>>
 }
 
 
-struct Message {
+pub struct Message {
     user: User,
     message: String
 }
 
-struct Room {
-    connections: RwLock<HashMap<usize, Connection>>,
+#[derive(Default)]
+pub struct Room {
+    pub connections: RwLock<HashMap<usize, Connection>>,
     chat_messages: RwLock<Vec<Message>>,
-    canvas: RwLock<Canvas>
+    canvas: RwLock<Vec<Layer>>
 }
 
 
-struct Canvas{
-    layers: RwLock<Vec<Layer>>
-}
 
 struct Layer {
     paint_strokes: Vec<PaintStroke>,
@@ -83,4 +80,8 @@ struct PaintStroke{
     brush: Brush,
     points: Vec<StrokePoint>
 }
+
+
+
+
 
