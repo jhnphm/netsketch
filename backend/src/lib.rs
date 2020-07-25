@@ -7,9 +7,8 @@ use warp::ws::Message as WsMessage;
 use tokio::sync::{mpsc, RwLock};
 use std::vec::Vec;
 use std::str;
+use netsketch_shared::*;
 
-pub type UserId = usize;
-pub type UserName = String;
 
 /// Our global unique user id counter.
 static NEXT_USERID: AtomicUsize = AtomicUsize::new(1);
@@ -80,47 +79,3 @@ impl Room {
 
 
 
-struct Layer {
-    paint_strokes: Vec<(UserId,PaintStroke)>,
-    tiles: HashMap<Coord, Tile>
-}
-
-
-struct Coord{
-    x: i32,
-    y: i32
-}
-
-const TILE_SIZE: u32 = 1024;
-
-struct Tile {
-    coord: Coord,
-    stroke_indices: Vec<usize>
-}
-
-
-struct Color {
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8
-}
-
-struct Brush{
-    color: Color,
-    width: f32,
-    hardness: f32,
-    smudging: f32
-}
-
-
-struct StrokePoint {
-    pressure: f32,
-    x: i32,
-    y: i32
-}
-
-struct PaintStroke{
-    brush: Brush,
-    points: Vec<StrokePoint>
-}

@@ -1,0 +1,14 @@
+[package]
+name = "netsketch-backend"
+version = "0.1.0"
+authors = ["John Pham <jhnphm@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+futures = "0.3.5"
+pretty_env_logger = "0.4.0"
+tokio = { version = "0.2", features = ["macros"] }
+warp = "0.2"
+netsketch-shared = {path = "../shared"}
