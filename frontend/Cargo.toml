@@ -3,11 +3,14 @@ name = "netsketch-frontend"
 version = "0.1.0"
 authors = ["John Pham <jhnphm@gmail.com>"]
 edition = "2018"
+repository = "https://github.com/jhnphm/netsketch"
+license = "GPL-3.0-or-later"
+description = "Frontend crate for netsketch drawing app"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 yew = "0.17"
