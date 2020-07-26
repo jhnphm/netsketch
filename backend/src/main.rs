@@ -1,4 +1,5 @@
 #![deny(warnings)]
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -28,8 +29,8 @@ async fn main() {
     // Turn our "state" into a new Filter...
     let rooms = warp::any().map(move || rooms.clone());
 
-    // GET /chat -> websocket upgrade
-    let chat = warp::path("chat")
+    // GET /ws -> websocket upgrade
+    let ws = warp::path("ws")
         .and(warp::path::param())
         .and(rooms)
         .and_then(|room_id: usize, rooms: Arc<Vec<Arc<Room>>>| async move{
@@ -44,8 +45,11 @@ async fn main() {
             ws.on_upgrade(move |socket| connected(socket, room.clone(), username))
         });
 
+    let args: Vec<String> = std::env::args().collect();
 
-    warp::serve(chat).run(SocketAddr::from_str("[::]:8081").unwrap()).await;
+    let static_fs = warp::fs::dir(PathBuf::from(args[1].as_str()));
+
+    warp::serve(ws.or(static_fs)).run(SocketAddr::from_str("[::]:8081").unwrap()).await;
     
     //let ipv4_warp = warp::serve(chat.clone()).try_bind(SocketAddr::from_str("0.0.0.0:8081").unwrap());
     //let ipv6_warp = warp::serve(chat.clone()).try_bind(SocketAddr::from_str("[::]:8081").unwrap());
