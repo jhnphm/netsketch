@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
+    atomic::{AtomicUsize, Ordering}
 };
 use warp::ws::Message as WsMessage;
 use tokio::sync::{mpsc, RwLock};
 use std::vec::Vec;
-use std::str;
 use netsketch_shared::*;
 
 

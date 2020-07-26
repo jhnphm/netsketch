@@ -735,7 +735,9 @@ dependencies = [
 name = "netsketch-frontend"
 version = "0.1.0"
 dependencies = [
+ "netsketch-shared",
  "wasm-bindgen",
+ "web-sys",
  "yew",
 ]
 

@@ -46,10 +46,14 @@ struct Brush{
 }
 
 
-struct StrokePoint {
-    pressure: f32,
-    x: i32,
-    y: i32
+#[derive(Default)]
+pub struct StrokePoint {
+    /// Pressure
+    pub p: f32, 
+    /// X coord
+    pub x: i32,
+    /// Y coord
+    pub y: i32
 }
 
 struct PaintStroke{
