@@ -12,8 +12,9 @@ pub struct DrawCanvas {
 
     
     draw_context: Option<Box<CanvasRenderingContext2d>>,
-    last_point: StrokePoint,
+    paint_stroke: PaintStroke,
     pointer_down: bool,
+
 }
 
 pub enum Msg {
@@ -30,11 +31,14 @@ impl DrawCanvas {
                 let scale_x: f32 = bounding_rect.width() as f32 / canvas.width() as f32;
                 let scale_y: f32 = bounding_rect.height() as f32 / canvas.height() as f32;
 
-                let from_point = StrokePoint {
-                    p: self.last_point.p,
-                    x: (self.last_point.x as f32 / scale_x) as i32,
-                    y: (self.last_point.y as f32 / scale_y) as i32,
+                let last_point = match self.paint_stroke.points.last(){
+                    Some(last_point) => last_point,
+                    None => {ConsoleService::log("Stroke points empty"); return}
                 };
+
+                let from_point = StrokePoint {
+                    p: last_point.p,
+                    x: (last_point.x as f32 / scale_x) as i32, y: (last_point.y as f32 / scale_y) as i32, };
                 let to_point = StrokePoint { p: cur_point.p, x: (cur_point.x as f32 / scale_x) as i32,
                     y: (cur_point.y as f32 / scale_y) as i32,
                 };
@@ -65,7 +69,7 @@ impl Component for DrawCanvas {
             _resize_closure: None,
 
             draw_context: None,
-            last_point: StrokePoint::default(),
+            paint_stroke: PaintStroke::default(),
             pointer_down: false,
         }
     }
@@ -105,11 +109,12 @@ impl Component for DrawCanvas {
         match msg {
             Msg::PointerDown(event) => {
                 self.pointer_down = true;
-                self.last_point = StrokePoint {
+                let cur_point = StrokePoint {
                     p: event.pressure(),
                     x: event.offset_x(),
                     y: event.offset_y(),
                 };
+                self.paint_stroke.points.push(cur_point);
             }
             Msg::PointerMove(event) => {
                 if self.pointer_down {
@@ -119,16 +124,20 @@ impl Component for DrawCanvas {
                         y: event.offset_y(),
                     };
                     self.draw_line(&cur_point);
-                    self.last_point = cur_point;
+                    self.paint_stroke.points.push(cur_point);
                 }
             }
             Msg::PointerUp(event) => {
                 self.pointer_down = false;
-                self.draw_line(&StrokePoint {
+                let cur_point = StrokePoint {
                     p: event.pressure(),
                     x: event.offset_x(),
                     y: event.offset_y(),
-                });
+                };
+                self.draw_line(&cur_point);
+                self.paint_stroke.points.push(cur_point);
+                //Send
+                self.paint_stroke.points.clear()
             }
         };
         false
@@ -144,7 +153,7 @@ impl Component for DrawCanvas {
     fn view(&self) -> Html {
         html! {
             <canvas
-                style="display: block"
+                style="display: block; cursor: crosshair"
                 ref=self.node_ref.clone()
                 onpointerdown=self.link.callback(|event: PointerEvent| Msg::PointerDown(event))
                 onpointermove=self.link.callback(|event: PointerEvent| Msg::PointerMove(event))
