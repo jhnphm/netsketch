@@ -20,15 +20,15 @@ pub struct Layer {
 }
 
 #[derive(Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
-struct Offset {
-    x: i32,
-    y: i32,
+pub struct Offset {
+    pub x: i32,
+    pub y: i32,
 }
 
-const TILE_SIZE: u32 = 1024;
+pub const TILE_SIZE: u32 = 1024;
 
 #[derive(Default, Serialize, Deserialize, Debug, PartialEq, Clone)]
-struct Tile {
+pub struct Tile {
     stroke_indices: Vec<usize>,
 }
 
