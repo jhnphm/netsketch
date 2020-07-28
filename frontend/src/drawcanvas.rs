@@ -137,6 +137,17 @@ impl Component for DrawCanvas {
                 self.draw_line(&cur_point);
                 self.paint_stroke.points.push(cur_point);
                 //Send
+                
+                ////Send
+                let bincode = bincode::serialize(&self.paint_stroke).unwrap();
+                //ConsoleService::log(format!("bincode length: {}",bincode.len()).as_ref());
+
+                use std::io::Write;
+                let mut e = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+                let _ = e.write_all(&bincode);
+                let output = e.finish().unwrap();
+
+                //ConsoleService::log(format!("zbincode length: {}",output.len()).as_ref());
                 self.paint_stroke.points.clear()
             }
         };
