@@ -5,7 +5,7 @@ use std::sync::{
 use warp::ws::Message as WsMessage;
 use tokio::sync::{mpsc, RwLock};
 use std::vec::Vec;
-use netsketch_shared as nss;
+use netsketch_shared::prelude::*;
 
 
 /// Our global unique user id counter.
@@ -14,7 +14,7 @@ static NEXT_USERID: AtomicUsize = AtomicUsize::new(1);
 
 pub struct Connection {
     username: String,
-    userid: nss::UserId,
+    userid: UserId,
     tx_conn: mpsc::UnboundedSender<Result<WsMessage, warp::Error>>,
 }
 
@@ -22,9 +22,9 @@ pub struct Connection {
 #[derive(Default)]
 pub struct Room {
     pub room_id: usize,
-    connections: RwLock<HashMap<nss::UserId, Connection>>,
-    chat_messages: RwLock<Vec<(nss::UserName,nss::ChatMessage)>>,
-    canvas: RwLock<Vec<nss::Layer>>
+    connections: RwLock<HashMap<UserId, Connection>>,
+    chat_messages: RwLock<Vec<(Username,ChatMessage)>>,
+    canvas: RwLock<Vec<Layer>>
 }
 
 
@@ -38,7 +38,7 @@ macro_rules! room_eprintln{
 impl Room {
 
 
-    pub async fn connect(&self, tx_conn: mpsc::UnboundedSender<Result<WsMessage, warp::Error>>, username: String) -> nss::UserId{
+    pub async fn connect(&self, tx_conn: mpsc::UnboundedSender<Result<WsMessage, warp::Error>>, username: String) -> UserId{
         // Use a counter to assign a new unique ID for this user.
         let userid = NEXT_USERID.fetch_add(1, Ordering::Relaxed);
 
@@ -50,7 +50,7 @@ impl Room {
         userid
     }
 
-    pub async fn receive_msg(&self, user_id: nss::UserId, msg: WsMessage){
+    pub async fn receive_msg(&self, user_id: UserId, msg: WsMessage){
         use std::io::prelude::*;
         let mut buf = Vec::new();
         let mut inflator = flate2::read::DeflateDecoder::new(msg.as_bytes());
@@ -58,20 +58,20 @@ impl Room {
             room_eprintln!(self, "Error decompressing input: {}", err.to_string());
             return;
         }
-        let data: bincode::Result<nss::ClientMessage> = bincode::deserialize(&buf);
+        let data: bincode::Result<ClientMessage> = bincode::deserialize(&buf);
         let data =  match data 
         {
             Ok(data) => data,
             Err(err) => {room_eprintln!(self, "Error de-bincoding input: {}", err.to_string()); return;}
         };
         match data {
-            nss::ClientMessage::PaintStroke(layer_id, paint_stroke) => {
-                if layer_id < nss::MAX_LAYERS{
+            ClientMessage::PaintStroke(layer_id, paint_stroke) => {
+                if layer_id < netsketch_shared::MAX_LAYERS{
                     let mut canvas = self.canvas.write().await;
                     let layer = match canvas.get_mut(layer_id as usize){
                         Some(layer) => layer,
                         None=> {
-                            canvas.resize(layer_id as usize+1, nss::Layer::default()); 
+                            canvas.resize(layer_id as usize+1, Layer::default()); 
                             &mut canvas[layer_id as usize]
                         }
                     };
@@ -79,7 +79,7 @@ impl Room {
 
                     for (their_user_id, conn) in self.connections.read().await.iter() {
                         if user_id != *their_user_id {
-                            let msg = nss::ServerMessage::PaintStroke(layer_id, paint_stroke.clone());
+                            let msg = ServerMessage::PaintStroke(layer_id, paint_stroke.clone());
                             //conn.tx_conn.send(Ok(msg));
                         }
                     }
@@ -111,7 +111,7 @@ impl Room {
         // }
     }
 
-    pub async fn disconnect (&self, userid: nss::UserId){
+    pub async fn disconnect (&self, userid: UserId){
         // Stream closed up, so remove from the user list
         let mut conn_map = self.connections.write().await;
         if let Some(conn) = conn_map.get(&userid){

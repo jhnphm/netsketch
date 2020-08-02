@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
-
 use std::collections::HashMap;
+
+pub mod prelude;
 
 #[cfg(test)]
 mod tests {
@@ -12,7 +13,7 @@ mod tests {
 
 pub type LayerId = u8;
 pub type UserId = usize;
-pub type UserName = String;
+pub type Username = String;
 pub type ChatMessage = String;
 
 pub const TILE_SIZE: u32 = 1024;
@@ -116,7 +117,7 @@ pub enum ClientMessage {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum ServerMessage {
     PaintStroke(LayerId, PaintStroke),
-    ChatMessage(UserName, String),
+    ChatMessage(Username, String),
 }
 
 //pub fn to_zbincode<T: Serialize>
