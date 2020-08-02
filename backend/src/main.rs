@@ -20,8 +20,10 @@ async fn main() {
     pretty_env_logger::init();
     let mut rooms : Vec<Arc<Room>> = Vec::new();
 
-    for _ in 0..NUM_ROOMS{
-        rooms.push(Arc::new(Room::default()));
+    for i in 0..NUM_ROOMS{
+        let mut room = Room::default();
+        room.room_id = i;
+        rooms.push(Arc::new(room));
     }
 
     let rooms = Arc::new(rooms);

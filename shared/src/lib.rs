@@ -10,13 +10,32 @@ mod tests {
     }
 }
 
+pub type LayerId = u8;
 pub type UserId = usize;
 pub type UserName = String;
+pub type ChatMessage = String;
 
-#[derive(Default, Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub const TILE_SIZE: u32 = 1024;
+pub const MAX_LAYERS: u8 = 100;
+
+
+#[derive(Default, Debug, PartialEq, Clone)]
 pub struct Layer {
     paint_strokes: Vec<(UserId, PaintStroke)>,
     tiles: HashMap<Offset, Tile>,
+}
+
+impl Layer{
+    pub fn add_paint_stroke(&mut self, user_id: UserId, paint_stroke: &PaintStroke){
+        self.paint_strokes.push((user_id, paint_stroke.clone()));
+        // TODO Add to tiles
+    }
+}
+
+
+#[derive(Default, Debug, PartialEq, Clone)]
+pub struct Tile {
+    stroke_indices: Vec<usize>,
 }
 
 #[derive(Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
@@ -25,12 +44,6 @@ pub struct Offset {
     pub y: i32,
 }
 
-pub const TILE_SIZE: u32 = 1024;
-
-#[derive(Default, Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub struct Tile {
-    stroke_indices: Vec<usize>,
-}
 
 #[derive(Default, Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Color {
@@ -91,3 +104,19 @@ pub struct PaintStroke {
     pub brush: Brush,
     pub points: Vec<StrokePoint>,
 }
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub enum ClientMessage {
+    PaintStroke(LayerId, PaintStroke),
+    ChatMessage(String),
+    UndoMessage,
+    FetchTile(LayerId, Offset),
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub enum ServerMessage {
+    PaintStroke(LayerId, PaintStroke),
+    ChatMessage(UserName, String),
+}
+
+//pub fn to_zbincode<T: Serialize>

@@ -1,2 +1,2 @@
 #! /bin/sh
-cargo run static
+cargo run -p netsketch_backend static
