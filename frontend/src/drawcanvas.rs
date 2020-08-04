@@ -36,7 +36,7 @@ pub enum Msg {
 }
 
 impl DrawCanvas {
-    fn draw_line(&self, cur_point: &StrokePoint) {
+    fn draw_line(&self, _: &Brush, prev_points: &[StrokePoint], cur_point: &StrokePoint) {
         let canvas = match self.node_ref.cast::<HtmlCanvasElement>() {
             Some(canvas) => canvas,
             None => {
@@ -55,7 +55,7 @@ impl DrawCanvas {
         let scale_x: f32 = bounding_rect.width() as f32 / canvas.width() as f32;
         let scale_y: f32 = bounding_rect.height() as f32 / canvas.height() as f32;
 
-        let last_point = match self.cur_paint_stroke.points.last() {
+        let last_point = match prev_points.last() {
             Some(last_point) => last_point,
             None => {
                 ConsoleService::error("Stroke points empty");
@@ -73,6 +73,10 @@ impl DrawCanvas {
             x: (cur_point.x as f32 / scale_x) as i32,
             y: (cur_point.y as f32 / scale_y) as i32,
         };
+
+        ConsoleService::log(&format!("{:?}", prev_points));
+        ConsoleService::log(&format!("{:?}, {:?}", from_point, to_point));
+
         draw_context.begin_path();
         draw_context.set_line_join("round");
         draw_context.set_line_width((2.0 * (from_point.p + to_point.p) / 2.0) as f64);
@@ -202,7 +206,7 @@ impl Component for DrawCanvas {
                         x: event.offset_x(),
                         y: event.offset_y(),
                     };
-                    self.draw_line(&cur_point);
+                    self.draw_line(&self.cur_paint_stroke.brush, &self.cur_paint_stroke.points[..], &cur_point);
                     self.cur_paint_stroke.points.push(cur_point);
                 }
             }
@@ -213,7 +217,7 @@ impl Component for DrawCanvas {
                     x: event.offset_x(),
                     y: event.offset_y(),
                 };
-                self.draw_line(&cur_point);
+                self.draw_line(&self.cur_paint_stroke.brush, &self.cur_paint_stroke.points[..], &cur_point);
                 self.cur_paint_stroke.points.push(cur_point);
 
                 //Send paint stroke to server
@@ -233,6 +237,16 @@ impl Component for DrawCanvas {
                         }
                         Err(err) => ConsoleService::error(&err.to_string()),
                     };
+                }
+            }
+            Msg::WsReady(server_message) => {
+                match server_message {
+                    ServerMessage::PaintStroke(layer,paint_stroke) =>{
+                        for i in 1..paint_stroke.points.len() {
+                            self.draw_line(&paint_stroke.brush, &paint_stroke.points[0..i], &paint_stroke.points[i]);
+                        }
+                    }
+                    _ => ()
                 }
             }
             _ => (),
