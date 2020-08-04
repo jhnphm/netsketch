@@ -773,8 +773,6 @@ name = "netsketch_frontend"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bincode",
- "flate2",
  "netsketch_shared",
  "rand 0.7.3",
  "wasm-bindgen",

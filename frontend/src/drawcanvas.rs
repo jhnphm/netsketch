@@ -2,7 +2,7 @@ use netsketch_shared::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
-use yew::format::{Binary};
+use yew::format::Binary;
 use yew::prelude::*;
 use yew::services::websocket::{WebSocketService, WebSocketStatus, WebSocketTask};
 use yew::services::ConsoleService;
@@ -25,7 +25,6 @@ pub struct DrawCanvas {
     /// Last mousedown state
     pointer_down: bool,
 }
-
 
 pub enum Msg {
     PointerDown(web_sys::PointerEvent),
@@ -97,26 +96,24 @@ impl DrawCanvas {
         // Generate websocket target
         Ok(format!("{}//{}/ws/{}", wsproto, host, hashval))
     }
-    fn ws_connect(&mut self){
+
+    fn ws_connect(&mut self) {
         let callback = self.link.callback(|data: Binary| {
             if let Ok(data) = data {
-                use std::io::prelude::*;
-                let mut buf = Vec::new();
-                let mut inflator = flate2::read::DeflateDecoder::new(&data[..]);
-                if let Err(_) = inflator.read_to_end(&mut buf) {
-                    return Msg::ErrMsg("Decompress error".to_string());
-                }
-                let data: bincode::Result<ServerMessage> = bincode::deserialize(&buf);
-                match data 
-                {
+                // Extract compressed bincode
+                let dataresult: Result<ServerMessage, String> =
+                    netsketch_shared::from_zbincode(&data);
+                match dataresult {
                     Ok(data) => Msg::WsReady(data),
-                    Err(err) => Msg::ErrMsg(err.to_string())
+                    Err(err) => Msg::ErrMsg(err.to_string()),
                 }
-            }else{
+            } else {
                 Msg::ErrMsg("Error getting binary data".to_string())
             }
         });
-        let notification = self.link.callback(|data: WebSocketStatus| Msg::WsAction(data));
+        let notification = self
+            .link
+            .callback(|data: WebSocketStatus| Msg::WsAction(data));
 
         if let Ok(wsaddr) = DrawCanvas::get_wsaddr() {
             self.websocket = Some(
@@ -126,9 +123,8 @@ impl DrawCanvas {
         } else {
             ConsoleService::error("Unable to determine websocket host");
         }
-
     }
-} 
+}
 impl Component for DrawCanvas {
     type Message = Msg;
     type Properties = ();
@@ -220,15 +216,22 @@ impl Component for DrawCanvas {
                 self.draw_line(&cur_point);
                 self.cur_paint_stroke.points.push(cur_point);
 
-                ////Send
-                if let Some(ws) = self.websocket.as_mut(){
-                    let new_stroke = PaintStroke {brush: self.cur_paint_stroke.brush, points: Vec::new()};
-                    let zbincode = netsketch_shared::to_zbincode(&ClientMessage::PaintStroke(0,std::mem::replace(&mut self.cur_paint_stroke, new_stroke)));
-                    match zbincode{
+                //Send paint stroke to server
+                if let Some(ws) = self.websocket.as_mut() {
+                    // Create replacement paint stroke
+                    let new_stroke = PaintStroke {
+                        brush: self.cur_paint_stroke.brush,
+                        points: Vec::new(),
+                    };
+                    let zbincode_msg = netsketch_shared::to_zbincode(&ClientMessage::PaintStroke(
+                        0,
+                        std::mem::replace(&mut self.cur_paint_stroke, new_stroke),
+                    ));
+                    match zbincode_msg {
                         Ok(data) => {
                             ws.send_binary(Ok(data));
-                        },
-                        Err(err) => ConsoleService::error(&err.to_string())
+                        }
+                        Err(err) => ConsoleService::error(&err.to_string()),
                     };
                 }
             }
