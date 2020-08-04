@@ -11,4 +11,3 @@ pub use crate::StrokePoint;
 pub use crate::PaintStroke;
 pub use crate::ClientMessage;
 pub use crate::ServerMessage;
-

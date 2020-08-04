@@ -761,8 +761,6 @@ dependencies = [
 name = "netsketch_backend"
 version = "0.1.0"
 dependencies = [
- "bincode",
- "flate2",
  "futures",
  "netsketch_shared",
  "pretty_env_logger",
@@ -788,6 +786,8 @@ dependencies = [
 name = "netsketch_shared"
 version = "0.1.0"
 dependencies = [
+ "bincode",
+ "flate2",
  "serde",
 ]
 

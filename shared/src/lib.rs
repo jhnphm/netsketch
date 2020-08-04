@@ -39,14 +39,14 @@ pub struct Tile {
     stroke_indices: Vec<usize>,
 }
 
-#[derive(Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
+#[derive(Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone, Copy)]
 pub struct Offset {
     pub x: i32,
     pub y: i32,
 }
 
 
-#[derive(Default, Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Default, Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
 pub struct Color {
     pub r: u8,
     pub g: u8,
@@ -54,7 +54,7 @@ pub struct Color {
     pub a: u8,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
 pub struct Brush {
     pub color: Color,
     pub width: f32,
@@ -78,7 +78,7 @@ impl Default for Brush {
     }
 }
 
-#[derive(Default, Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Default, Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
 pub struct StrokePoint {
     /// Pressure
     pub p: f32,
@@ -120,4 +120,39 @@ pub enum ServerMessage {
     ChatMessage(Username, String),
 }
 
-//pub fn to_zbincode<T: Serialize>
+
+pub fn from_zbincode<T: serde::de::DeserializeOwned>(serialized: &[u8])->Result<T, String>{
+    use std::io::prelude::*;
+    let mut buf = Vec::new();
+    let mut inflator = flate2::read::DeflateDecoder::new(serialized);
+    if let Err(err) = inflator.read_to_end(&mut buf) {
+        return Err(err.to_string());
+    }
+    let data: bincode::Result<T> = bincode::deserialize(&buf);
+
+    match data 
+    {
+        Ok(data) => Ok(data),
+        Err(err) => Err(err.to_string())
+    }
+}
+pub fn to_zbincode<T: Serialize>(serializable: &T)->Result<Vec<u8>, String>{
+    let bincode = match bincode::serialize(&serializable){
+        Ok(data) => data,
+        Err(err) => return Err(err.to_string())
+    };
+    
+    use std::io::Write;
+    let mut e =
+        flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+    if let Err(err) = e.write_all(&bincode){
+        return Err(err.to_string());
+    }
+
+    match  e.finish(){
+        Ok(data) => Ok(data),
+        Err(err) => Err(err.to_string())
+    }
+}
+
+

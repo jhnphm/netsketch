@@ -222,26 +222,15 @@ impl Component for DrawCanvas {
 
                 ////Send
                 if let Some(ws) = self.websocket.as_mut(){
-                    let bincode = match bincode::serialize(&ClientMessage::PaintStroke(0,self.cur_paint_stroke.clone())){
-                        Ok(data) => data,
-                        Err(err) => {ConsoleService::error(&err.to_string()); Vec::new()}
-                    };
-                    
-                    use std::io::Write;
-                    let mut e =
-                        flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
-                    if let Err(_) = e.write_all(&bincode){
-                        ConsoleService::error("Compression error");
-                    }else{
-                        if let Ok(data) =  e.finish(){
+                    let new_stroke = PaintStroke {brush: self.cur_paint_stroke.brush, points: Vec::new()};
+                    let zbincode = netsketch_shared::to_zbincode(&ClientMessage::PaintStroke(0,std::mem::replace(&mut self.cur_paint_stroke, new_stroke)));
+                    match zbincode{
+                        Ok(data) => {
                             ws.send_binary(Ok(data));
-                        }
-                    }
-                        
+                        },
+                        Err(err) => ConsoleService::error(&err.to_string())
+                    };
                 }
-
-
-                self.cur_paint_stroke.points.clear();
             }
             _ => (),
         };
