@@ -91,13 +91,17 @@ impl Room {
                             Ok(msg) => {
                                 for (their_user_id, conn) in self.connections.read().await.iter() {
                                     if user_id != *their_user_id {
-                                        if let Err(err) = conn.tx_conn.send(Ok(WsMessage::binary(msg.clone()))){
+                                        if let Err(err) =
+                                            conn.tx_conn.send(Ok(WsMessage::binary(msg.clone())))
+                                        {
                                             room_eprintln!(self, "Send error: {}", err.to_string());
                                         }
                                     }
                                 }
                             }
-                            Err(err) => {room_eprintln!(self, "ZBincode error: {}", err.to_string());}
+                            Err(err) => {
+                                room_eprintln!(self, "ZBincode error: {}", err.to_string());
+                            }
                         };
                     } else {
                         // Bail out on failed bounds check
@@ -107,26 +111,6 @@ impl Room {
                 _ => (),
             }
         }
-
-        // // Skip any non-Text messages...
-        // let msg = if let Ok(s) = msg.to_str() {
-        //     s
-        // } else {
-        //     return;
-        // };
-
-        // let new_msg = format!("<User#{}>: {}", my_id, msg);
-
-        // // New message from this user, send it to everyone else (except same uid)...
-        // for (&uid, tx) in users.read().await.iter() {
-        //     if my_id != uid {
-        //         if let Err(_disconnected) = tx.send(Ok(Message::text(new_msg.clone()))) {
-        //             // The tx is disconnected, our `user_disconnected` code
-        //             // should be happening in another task, nothing more to
-        //             // do here.
-        //         }
-        //     }
-        // }
     }
 
     pub async fn disconnect(&self, userid: UserId) {

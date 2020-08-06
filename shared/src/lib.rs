@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 pub mod prelude;
 
@@ -16,27 +17,79 @@ pub type UserId = usize;
 pub type Username = String;
 pub type ChatMessage = String;
 
-pub const TILE_SIZE: u32 = 1024;
+pub const TILE_SIZE: u32 = 100;
 pub const MAX_LAYERS: u8 = 100;
+pub const UNDO_DEPTH: u8 = 10;
 
+type StrokeIndex = usize;
 
 #[derive(Default, Debug, PartialEq, Clone)]
 pub struct Layer {
     paint_strokes: Vec<(UserId, PaintStroke)>,
-    tiles: HashMap<Offset, Tile>,
+    tiles: HashMap<Offset, Vec<StrokeIndex>>,
 }
 
-impl Layer{
-    pub fn add_paint_stroke(&mut self, user_id: UserId, paint_stroke: &PaintStroke){
-        self.paint_strokes.push((user_id, paint_stroke.clone()));
-        // TODO Add to tiles
+impl Layer {
+    fn find_tile_offsets(paint_stroke: &PaintStroke) -> HashSet<Offset> {
+        let mut tile_offsets: HashSet<Offset> = HashSet::new();
+
+        // We have to add offsets in each direction to account for brush radius
+        let radius = ((paint_stroke.brush.width + 1.0) / 2.0) as i32;
+
+        for j in &[
+            Offset {
+                x: -radius,
+                y: -radius,
+            },
+            Offset {
+                x: -radius,
+                y: radius,
+            },
+            Offset {
+                x: radius,
+                y: -radius,
+            },
+            Offset {
+                x: radius,
+                y: radius,
+            },
+        ] {
+            for i in &paint_stroke.points {
+                let i = *i + *j;
+                let mut x = i.x;
+                let mut y = i.y;
+                if x < 0 {
+                    x -= TILE_SIZE as i32;
+                }
+                if y < 0 {
+                    y -= TILE_SIZE as i32;
+                }
+                let offset = Offset {
+                    x: (x / TILE_SIZE as i32) * TILE_SIZE as i32,
+                    y: (y / TILE_SIZE as i32) * TILE_SIZE as i32,
+                };
+                tile_offsets.insert(offset);
+            }
+        }
+        return tile_offsets;
     }
-}
+    pub fn add_paint_stroke(&mut self, user_id: UserId, paint_stroke: &PaintStroke) {
+        self.paint_strokes.push((user_id, paint_stroke.clone()));
+        let stroke_index = self.paint_strokes.len() - 1;
 
+        let tile_offsets = Layer::find_tile_offsets(paint_stroke);
 
-#[derive(Default, Debug, PartialEq, Clone)]
-pub struct Tile {
-    stroke_indices: Vec<usize>,
+        for i in tile_offsets {
+            if let Some(tile) = self.tiles.get_mut(&i) {
+                tile.push(stroke_index);
+            } else {
+                let mut tile: Vec<StrokeIndex> = Vec::new();
+                tile.push(stroke_index);
+                self.tiles.insert(i, tile);
+            }
+        }
+    }
+
 }
 
 #[derive(Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone, Copy)]
@@ -44,7 +97,6 @@ pub struct Offset {
     pub x: i32,
     pub y: i32,
 }
-
 
 #[derive(Default, Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
 pub struct Color {
@@ -120,8 +172,7 @@ pub enum ServerMessage {
     ChatMessage(Username, String),
 }
 
-
-pub fn from_zbincode<T: serde::de::DeserializeOwned>(serialized: &[u8])->Result<T, String>{
+pub fn from_zbincode<T: serde::de::DeserializeOwned>(serialized: &[u8]) -> Result<T, String> {
     use std::io::prelude::*;
     let mut buf = Vec::new();
     let mut inflator = flate2::read::DeflateDecoder::new(serialized);
@@ -130,29 +181,25 @@ pub fn from_zbincode<T: serde::de::DeserializeOwned>(serialized: &[u8])->Result<
     }
     let data: bincode::Result<T> = bincode::deserialize(&buf);
 
-    match data 
-    {
+    match data {
         Ok(data) => Ok(data),
-        Err(err) => Err(err.to_string())
+        Err(err) => Err(err.to_string()),
     }
 }
-pub fn to_zbincode<T: Serialize>(serializable: &T)->Result<Vec<u8>, String>{
-    let bincode = match bincode::serialize(&serializable){
+pub fn to_zbincode<T: Serialize>(serializable: &T) -> Result<Vec<u8>, String> {
+    let bincode = match bincode::serialize(&serializable) {
         Ok(data) => data,
-        Err(err) => return Err(err.to_string())
+        Err(err) => return Err(err.to_string()),
     };
-    
+
     use std::io::Write;
-    let mut e =
-        flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
-    if let Err(err) = e.write_all(&bincode){
+    let mut e = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+    if let Err(err) = e.write_all(&bincode) {
         return Err(err.to_string());
     }
 
-    match  e.finish(){
+    match e.finish() {
         Ok(data) => Ok(data),
-        Err(err) => Err(err.to_string())
+        Err(err) => Err(err.to_string()),
     }
 }
-
-

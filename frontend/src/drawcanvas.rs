@@ -22,6 +22,10 @@ pub struct DrawCanvas {
     /// Current unsent paint stroke
     cur_paint_stroke: PaintStroke,
 
+    /// viewport offset
+    viewport_offset: Offset,
+
+    
     /// Last mousedown state
     pointer_down: bool,
 }
@@ -36,6 +40,11 @@ pub enum Msg {
 }
 
 impl DrawCanvas {
+    fn draw_stroke(&self, paint_stroke: &PaintStroke){
+        for i in 1..paint_stroke.points.len() {
+            self.draw_line(&paint_stroke.brush, &paint_stroke.points[0..i], &paint_stroke.points[i]);
+        }
+    }
     fn draw_line(&self, _: &Brush, prev_points: &[StrokePoint], cur_point: &StrokePoint) {
         let canvas = match self.node_ref.cast::<HtmlCanvasElement>() {
             Some(canvas) => canvas,
@@ -85,22 +94,6 @@ impl DrawCanvas {
         draw_context.stroke();
         draw_context.close_path();
     }
-    fn get_wsaddr() -> Result<String, String> {
-        // Extract location components to get websocket target
-        let location = web_sys::window().ok_or("Error getting window")?.location();
-        let proto = location.protocol().map_err(|_| "Error getting protocol")?;
-        let wsproto = if proto == "https:" { "wss:" } else { "ws:" };
-        let host = location.host().map_err(|_| "Error getting host")?;
-        let hash = location.hash().map_err(|_| "Error getting hash")?;
-
-        // Get everything after hash, or if this fails, default to room 0/random number username
-        let default_hashval = format!("0/{}", rand::random::<u16>());
-        let hashval = hash.get(1..).unwrap_or(&default_hashval);
-
-        // Generate websocket target
-        Ok(format!("{}//{}/ws/{}", wsproto, host, hashval))
-    }
-
     fn ws_connect(&mut self) {
         let callback = self.link.callback(|data: Binary| {
             if let Ok(data) = data {
@@ -119,7 +112,7 @@ impl DrawCanvas {
             .link
             .callback(|data: WebSocketStatus| Msg::WsAction(data));
 
-        if let Ok(wsaddr) = DrawCanvas::get_wsaddr() {
+        if let Ok(wsaddr) = get_wsaddr() {
             self.websocket = Some(
                 WebSocketService::connect_binary(&wsaddr, callback, notification)
                     .expect("Unable to connect to websocket"),
@@ -142,6 +135,7 @@ impl Component for DrawCanvas {
             draw_context: None,
             cur_paint_stroke: PaintStroke::default(),
             pointer_down: false,
+            viewport_offset: Offset::default()
         }
     }
 
@@ -242,9 +236,7 @@ impl Component for DrawCanvas {
             Msg::WsReady(server_message) => {
                 match server_message {
                     ServerMessage::PaintStroke(layer,paint_stroke) =>{
-                        for i in 1..paint_stroke.points.len() {
-                            self.draw_line(&paint_stroke.brush, &paint_stroke.points[0..i], &paint_stroke.points[i]);
-                        }
+                        self.draw_stroke(&paint_stroke)
                     }
                     _ => ()
                 }
@@ -273,3 +265,20 @@ impl Component for DrawCanvas {
         }
     }
 }
+
+fn get_wsaddr() -> Result<String, String> {
+    // Extract location components to get websocket target
+    let location = web_sys::window().ok_or("Error getting window")?.location();
+    let proto = location.protocol().map_err(|_| "Error getting protocol")?;
+    let wsproto = if proto == "https:" { "wss:" } else { "ws:" };
+    let host = location.host().map_err(|_| "Error getting host")?;
+    let hash = location.hash().map_err(|_| "Error getting hash")?;
+
+    // Get everything after hash, or if this fails, default to room 0/random number username
+    let default_hashval = format!("0/{}", rand::random::<u16>());
+    let hashval = hash.get(1..).unwrap_or(&default_hashval);
+
+    // Generate websocket target
+    Ok(format!("{}//{}/ws/{}", wsproto, host, hashval))
+}
+
