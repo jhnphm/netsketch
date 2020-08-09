@@ -1,5 +1,6 @@
 use netsketch_shared::prelude::*;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::vec::Vec;
 use tokio::sync::{mpsc, RwLock};
@@ -10,15 +11,16 @@ static NEXT_USERID: AtomicUsize = AtomicUsize::new(1);
 
 pub struct Connection {
     username: String,
-    userid: UserId,
+    //userid: UserId,
     tx_conn: mpsc::UnboundedSender<Result<WsMessage, warp::Error>>,
+    active_tile_offsets: HashSet<Offset>,
 }
 
 #[derive(Default)]
 pub struct Room {
     pub room_id: usize,
     connections: RwLock<HashMap<UserId, Connection>>,
-    chat_messages: RwLock<Vec<(Username, ChatMessage)>>,
+    //chat_messages: RwLock<Vec<(Username, ChatMessage)>>,
     canvas: RwLock<Vec<Layer>>,
 }
 
@@ -40,8 +42,8 @@ impl Room {
 
         let connection = Connection {
             username,
-            userid,
             tx_conn,
+            active_tile_offsets: HashSet::default(),
         };
 
         // Save the sender in our list of connected users.
