@@ -229,6 +229,8 @@ impl Component for DrawCanvas {
                 if let Some(ws) = self.websocket.as_mut() {
                     // Create replacement paint stroke
                     let new_stroke = PaintStroke {
+                        order: 0,
+                        user_id: 0,
                         brush: self.cur_paint_stroke.brush,
                         points: Vec::new(),
                     };
