@@ -83,7 +83,7 @@ impl Room {
                         };
 
                         // Add stroke to paint stack
-                        layer.add_paint_stroke(user_id, &paint_stroke);
+                        let (paint_stroke, tile_offsets) = layer.add_paint_stroke(user_id, paint_stroke);
 
                         // Send paint stroke to everyone connected
                         let msg = ServerMessage::PaintStroke(layer_id, paint_stroke);
@@ -92,7 +92,11 @@ impl Room {
                         match zbincode_msg {
                             Ok(msg) => {
                                 for (their_user_id, conn) in self.connections.read().await.iter() {
-                                    if user_id != *their_user_id {
+                                    if user_id != *their_user_id
+                                        && tile_offsets
+                                            .intersection(&conn.active_tile_offsets)
+                                            .count() != 0
+                                    {
                                         if let Err(err) =
                                             conn.tx_conn.send(Ok(WsMessage::binary(msg.clone())))
                                         {
@@ -124,3 +128,5 @@ impl Room {
         }
     }
 }
+
+

@@ -25,7 +25,6 @@ pub struct DrawCanvas {
     /// viewport offset
     viewport_offset: Offset,
 
-    
     /// Last mousedown state
     pointer_down: bool,
 }
@@ -40,9 +39,13 @@ pub enum Msg {
 }
 
 impl DrawCanvas {
-    fn draw_stroke(&self, paint_stroke: &PaintStroke){
+    fn draw_stroke(&self, paint_stroke: &PaintStroke) {
         for i in 1..paint_stroke.points.len() {
-            self.draw_line(&paint_stroke.brush, &paint_stroke.points[0..i], &paint_stroke.points[i]);
+            self.draw_line(
+                &paint_stroke.brush,
+                &paint_stroke.points[0..i],
+                &paint_stroke.points[i],
+            );
         }
     }
     fn draw_line(&self, _: &Brush, prev_points: &[StrokePoint], cur_point: &StrokePoint) {
@@ -135,13 +138,12 @@ impl Component for DrawCanvas {
             draw_context: None,
             cur_paint_stroke: PaintStroke::default(),
             pointer_down: false,
-            viewport_offset: Offset::default()
+            viewport_offset: Offset::default(),
         }
     }
 
     fn rendered(&mut self, first_render: bool) {
         if first_render {
-            self.ws_connect();
 
             //Get CanvasRenderingContext2d on first render
             let get_draw_context = || {
@@ -179,6 +181,7 @@ impl Component for DrawCanvas {
                 // gets called
                 self._resize_closure = Some(cb);
             }
+            self.ws_connect();
         }
     }
 
@@ -200,7 +203,11 @@ impl Component for DrawCanvas {
                         x: event.offset_x(),
                         y: event.offset_y(),
                     };
-                    self.draw_line(&self.cur_paint_stroke.brush, &self.cur_paint_stroke.points[..], &cur_point);
+                    self.draw_line(
+                        &self.cur_paint_stroke.brush,
+                        &self.cur_paint_stroke.points[..],
+                        &cur_point,
+                    );
                     self.cur_paint_stroke.points.push(cur_point);
                 }
             }
@@ -211,7 +218,11 @@ impl Component for DrawCanvas {
                     x: event.offset_x(),
                     y: event.offset_y(),
                 };
-                self.draw_line(&self.cur_paint_stroke.brush, &self.cur_paint_stroke.points[..], &cur_point);
+                self.draw_line(
+                    &self.cur_paint_stroke.brush,
+                    &self.cur_paint_stroke.points[..],
+                    &cur_point,
+                );
                 self.cur_paint_stroke.points.push(cur_point);
 
                 //Send paint stroke to server
@@ -233,14 +244,10 @@ impl Component for DrawCanvas {
                     };
                 }
             }
-            Msg::WsReady(server_message) => {
-                match server_message {
-                    ServerMessage::PaintStroke(layer,paint_stroke) =>{
-                        self.draw_stroke(&paint_stroke)
-                    }
-                    _ => ()
-                }
-            }
+            Msg::WsReady(server_message) => match server_message {
+                ServerMessage::PaintStroke(layer, paint_stroke) => self.draw_stroke(&paint_stroke),
+                _ => (),
+            },
             _ => (),
         };
         false
@@ -255,6 +262,7 @@ impl Component for DrawCanvas {
 
     fn view(&self) -> Html {
         html! {
+            <div>
             <canvas
                 style="display: block; cursor: crosshair"
                 ref=self.node_ref.clone()
@@ -262,6 +270,7 @@ impl Component for DrawCanvas {
                 onpointermove=self.link.callback(|event: PointerEvent| Msg::PointerMove(event))
                 onpointerup=self.link.callback(|event: PointerEvent| Msg::PointerUp(event))
             />
+            </div>
         }
     }
 }
@@ -281,4 +290,3 @@ fn get_wsaddr() -> Result<String, String> {
     // Generate websocket target
     Ok(format!("{}//{}/ws/{}", wsproto, host, hashval))
 }
-
