@@ -50,22 +50,22 @@ pub mod tile_ops {
     /// Generates a hashset of tile offsets contained in rectangle specified by upper left and
     /// lower right offsets
     pub fn compute_bounded_tile_offsets(
-        upper_left: Offset,
-        lower_right: Offset,
+        upper_left: &Offset,
+        lower_right: &Offset,
     ) -> HashSet<Offset> {
         let upper_left_offset = point_to_tile_offset(upper_left.x, upper_left.y);
         let lower_right_offset = point_to_tile_offset(lower_right.x, lower_right.y);
 
         let num_x_tiles = (lower_right_offset.x - upper_left_offset.x) / TILE_SIZE + 1;
-        let num_y_tiles = (upper_left_offset.y - lower_right_offset.y) / TILE_SIZE + 1;
+        let num_y_tiles = (lower_right_offset.y - upper_left_offset.y) / TILE_SIZE + 1;
 
         let mut offsets: HashSet<Offset> = HashSet::new();
 
         for i in 0..num_y_tiles {
             for j in 0..num_x_tiles {
                 offsets.insert(Offset {
-                    x: j * TILE_SIZE + upper_left.x,
-                    y: i * TILE_SIZE + upper_left.y,
+                    x: j * TILE_SIZE + upper_left_offset.x,
+                    y: i * TILE_SIZE + upper_left_offset.y,
                 });
             }
         }
@@ -121,8 +121,8 @@ pub struct Layer {
 
 impl Layer {
 
-    /// Adds paint stroke to layer and updates tile references. Returns hashset of updated tile
-    /// offsets.
+    /// Adds paint stroke to layer and updates tile references, and consumes paint stroke. Returns
+    /// paint stroke updated with order and hashset of updated tile offsets.
     pub fn add_paint_stroke(
         &mut self,
         user_id: UserId,
@@ -185,16 +185,16 @@ impl Layer {
     }
 
     /// Gets all strokes belonging to a tile
-    pub fn get_tile_paintstrokes(&self, tile_offset: Offset) -> BTreeSet<PaintStroke> {
+    pub fn get_tile_paintstrokes(&self, tile_offset: &Offset) -> BTreeSet<PaintStroke> {
         self.get_tile_paintstrokes_to_depth(tile_offset, usize::MAX)
     }
     /// Gets `max_depth` number of paintstrokes belonging to a tile
     pub fn get_tile_paintstrokes_to_depth(
         &self,
-        tile_offset: Offset,
+        tile_offset: &Offset,
         max_depth: usize,
     ) -> BTreeSet<PaintStroke> {
-        if let Some(tile) = self.tiles.get(&tile_offset) {
+        if let Some(tile) = self.tiles.get(tile_offset) {
             let start_idx = if max_depth <= tile.len() {
                 tile.len() - max_depth
             } else {
@@ -215,6 +215,16 @@ pub struct Offset {
     pub x: i32,
     pub y: i32,
 }
+impl std::ops::Add<Offset> for Offset{
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self{
+        Self{
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
+}
 
 #[derive(Default, Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
 pub struct Color {
@@ -224,7 +234,7 @@ pub struct Color {
     pub a: u8,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Brush {
     pub color: Color,
     pub width: f32,
@@ -277,6 +287,12 @@ pub struct PaintStroke {
     pub brush: Brush,
     pub points: Vec<StrokePoint>,
 }
+
+impl PaintStroke{
+}
+
+
+
 impl Ord for PaintStroke{
     fn cmp(&self, other: &Self) -> Ordering {
         self.order.cmp(&other.order)
@@ -302,9 +318,9 @@ impl Eq for PaintStroke {}
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum ClientMessage {
     PaintStroke(LayerId, PaintStroke),
+    SetViewPort(Offset, Offset),
     ChatMessage(String),
     UndoMessage,
-    SetActiveTileOffsets(HashSet<Offset>),
     FetchTile(LayerId, Offset),
 }
 

@@ -1,4 +1,5 @@
 use netsketch_shared::prelude::*;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -83,9 +84,10 @@ impl Room {
                         };
 
                         // Add stroke to paint stack
-                        let (paint_stroke, tile_offsets) = layer.add_paint_stroke(user_id, paint_stroke);
+                        let (paint_stroke, tile_offsets) =
+                            layer.add_paint_stroke(user_id, paint_stroke);
 
-                        // Send paint stroke to everyone connected
+                        // Send paint stroke to everyone connected viewing the visible tiles
                         let msg = ServerMessage::PaintStroke(layer_id, paint_stroke);
                         let zbincode_msg = netsketch_shared::to_zbincode(&msg);
 
@@ -95,7 +97,8 @@ impl Room {
                                     if user_id != *their_user_id
                                         && tile_offsets
                                             .intersection(&conn.active_tile_offsets)
-                                            .count() != 0
+                                            .count()
+                                            != 0
                                     {
                                         if let Err(err) =
                                             conn.tx_conn.send(Ok(WsMessage::binary(msg.clone())))
@@ -114,6 +117,42 @@ impl Room {
                         room_eprintln!(self, "Layer({}) > MAX_LAYERS", layer_id);
                     }
                 }
+                ClientMessage::SetViewPort(upper_left, lower_right) => {
+                    if let Some(conn) = self.connections.write().await.get_mut(&user_id) {
+                        conn.active_tile_offsets =
+                            netsketch_shared::tile_ops::compute_bounded_tile_offsets(
+                                &upper_left,
+                                &lower_right,
+                            );
+
+                        for (layer_id, layer) in self.canvas.read().await.iter().enumerate() {
+                            let mut visible_strokes = BTreeSet::new();
+                            for tile_offset in &conn.active_tile_offsets {
+                                visible_strokes
+                                    .append(&mut layer.get_tile_paintstrokes(&tile_offset));
+                            }
+
+                            for stroke in &visible_strokes {
+                                // Send paint stroke to everyone connected viewing the visible tiles
+                                let msg = ServerMessage::PaintStroke(layer_id as u8, stroke.clone());
+                                let zbincode_msg = netsketch_shared::to_zbincode(&msg);
+
+                                match zbincode_msg {
+                                    Ok(msg) => {
+                                        if let Err(err) =
+                                            conn.tx_conn.send(Ok(WsMessage::binary(msg)))
+                                        {
+                                            room_eprintln!(self, "Send error: {}", err.to_string());
+                                        }
+                                    }
+                                    Err(err) => {
+                                        room_eprintln!(self, "ZBincode error: {}", err.to_string());
+                                    }
+                                };
+                            }
+                        }
+                    }
+                }
                 _ => (),
             }
         }
@@ -128,5 +167,3 @@ impl Room {
         }
     }
 }
-
-

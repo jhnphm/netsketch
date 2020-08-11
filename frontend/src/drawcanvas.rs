@@ -1,9 +1,9 @@
 use netsketch_shared::*;
-use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 use yew::format::Binary;
 use yew::prelude::*;
+use yew::services::resize::{ResizeService, ResizeTask};
 use yew::services::websocket::{WebSocketService, WebSocketStatus, WebSocketTask};
 use yew::services::ConsoleService;
 
@@ -12,7 +12,7 @@ pub struct DrawCanvas {
     /// Reference to <canvas> node
     node_ref: NodeRef,
     /// Reference to window resize callback
-    _resize_closure: Option<Closure<dyn FnMut()>>,
+    resize_task: Option<ResizeTask>,
     /// Websocket connection
     websocket: Option<WebSocketTask>,
 
@@ -21,7 +21,6 @@ pub struct DrawCanvas {
 
     /// Current unsent paint stroke
     cur_paint_stroke: PaintStroke,
-
     /// viewport offset
     viewport_offset: Offset,
 
@@ -36,6 +35,7 @@ pub enum Msg {
     WsReady(ServerMessage),
     WsAction(WebSocketStatus),
     ErrMsg(String),
+    Resize,
 }
 
 impl DrawCanvas {
@@ -86,9 +86,6 @@ impl DrawCanvas {
             y: (cur_point.y as f32 / scale_y) as i32,
         };
 
-        ConsoleService::log(&format!("{:?}", prev_points));
-        ConsoleService::log(&format!("{:?}, {:?}", from_point, to_point));
-
         draw_context.begin_path();
         draw_context.set_line_join("round");
         draw_context.set_line_width((2.0 * (from_point.p + to_point.p) / 2.0) as f64);
@@ -132,7 +129,7 @@ impl Component for DrawCanvas {
         Self {
             link,
             node_ref: NodeRef::default(),
-            _resize_closure: None,
+            resize_task: None,
             websocket: None,
 
             draw_context: None,
@@ -144,6 +141,7 @@ impl Component for DrawCanvas {
 
     fn rendered(&mut self, first_render: bool) {
         if first_render {
+            self.ws_connect();
 
             //Get CanvasRenderingContext2d on first render
             let get_draw_context = || {
@@ -156,32 +154,10 @@ impl Component for DrawCanvas {
 
             // Register callback on window resize to also resize canvas
             // TODO Simplify this by using ResizeService instead
-            if let Some(window) = web_sys::window() {
-                let canvas_node = self.node_ref.clone();
-                let cb = move || {
-                    if let Some(canvas) = canvas_node.cast::<HtmlCanvasElement>() {
-                        if let Some(canvas_parent) = canvas.parent_element() {
-                            canvas.set_width(canvas_parent.client_width() as u32);
-                            canvas.set_height(canvas_parent.client_height() as u32);
-                        }
-                    }
-                };
-                // Call resize callback at least once
-                cb();
+            let cb = self.link.callback(|_| Msg::Resize);
+            self.resize_task = Some(ResizeService::new().register(cb));
 
-                // Actually register callback
-                let cb = Closure::wrap(Box::new(cb) as Box<dyn FnMut()>);
-                if let Err(_) =
-                    window.add_event_listener_with_callback("resize", cb.as_ref().unchecked_ref())
-                {
-                    ConsoleService::error("Error attaching resize event listener");
-                }
-
-                // Add reference to this callback so that it sticks around when the resize handler
-                // gets called
-                self._resize_closure = Some(cb);
-            }
-            self.ws_connect();
+            // Call resize callback at least once
         }
     }
 
@@ -195,6 +171,7 @@ impl Component for DrawCanvas {
                     y: event.offset_y(),
                 };
                 self.cur_paint_stroke.points.push(cur_point);
+                ConsoleService::log(&format!("button {}", event.button()));
             }
             Msg::PointerMove(event) => {
                 if self.pointer_down {
@@ -250,6 +227,46 @@ impl Component for DrawCanvas {
                 ServerMessage::PaintStroke(layer, paint_stroke) => self.draw_stroke(&paint_stroke),
                 _ => (),
             },
+            Msg::WsAction(status) => match status {
+                WebSocketStatus::Opened => {
+                    self.update(Msg::Resize);
+                }
+                _ => (),
+            },
+            Msg::Resize => {
+                let canvas_node = &self.node_ref;
+                if let Some(canvas) = canvas_node.cast::<HtmlCanvasElement>() {
+                    if let Some(canvas_parent) = canvas.parent_element() {
+                        let width = canvas_parent.client_width() as i32;
+                        let height = canvas_parent.client_height() as i32;
+                        canvas.set_width(width as u32);
+                        canvas.set_height(height as u32);
+
+                        self.viewport_offset = Offset {
+                            x: -width / 2,
+                            y: -height / 2,
+                        };
+
+                        let upper_left = self.viewport_offset;
+                        let lower_right = self.viewport_offset
+                            + Offset {
+                                x: width,
+                                y: height,
+                            };
+                        if let Some(ws) = self.websocket.as_mut() {
+                            let viewport = ClientMessage::SetViewPort(upper_left, lower_right);
+
+                            let zbincode_msg = netsketch_shared::to_zbincode(&viewport);
+                            match zbincode_msg {
+                                Ok(data) => {
+                                    ws.send_binary(Ok(data));
+                                }
+                                Err(err) => ConsoleService::error(&err.to_string()),
+                            };
+                        }
+                    }
+                }
+            }
             _ => (),
         };
         false
@@ -264,7 +281,7 @@ impl Component for DrawCanvas {
 
     fn view(&self) -> Html {
         html! {
-            <div>
+            <div style="width: 100%; height: 100%">
             <canvas
                 style="display: block; cursor: crosshair"
                 ref=self.node_ref.clone()
