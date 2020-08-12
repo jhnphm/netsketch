@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::collections::BTreeSet;
 
 pub mod prelude;
 
@@ -27,9 +27,9 @@ pub const MAX_LAYERS: u8 = 100;
 pub const UNDO_SEARCH_DEPTH: usize = 100;
 
 pub mod tile_ops {
-    use crate::TILE_SIZE;
     use crate::Offset;
     use crate::PaintStroke;
+    use crate::TILE_SIZE;
     use std::collections::HashSet;
 
     /// Generates a tile offset containing the x and y coordinates specified
@@ -37,14 +37,14 @@ pub mod tile_ops {
         let mut x = x;
         let mut y = y;
         if x < 0 {
-            x -= TILE_SIZE ;
+            x -= TILE_SIZE;
         }
         if y < 0 {
-            y -= TILE_SIZE ;
+            y -= TILE_SIZE;
         }
         Offset {
-            x: (x / TILE_SIZE ) * TILE_SIZE ,
-            y: (y / TILE_SIZE ) * TILE_SIZE ,
+            x: (x / TILE_SIZE) * TILE_SIZE,
+            y: (y / TILE_SIZE) * TILE_SIZE,
         }
     }
     /// Generates a hashset of tile offsets contained in rectangle specified by upper left and
@@ -107,7 +107,6 @@ pub mod tile_ops {
     }
 }
 
-
 pub type StrokeIndex = usize;
 
 #[derive(Default, Debug, PartialEq, Clone)]
@@ -120,7 +119,6 @@ pub struct Layer {
 }
 
 impl Layer {
-
     /// Adds paint stroke to layer and updates tile references, and consumes paint stroke. Returns
     /// paint stroke updated with order and hashset of updated tile offsets.
     pub fn add_paint_stroke(
@@ -131,15 +129,15 @@ impl Layer {
         paint_stroke.user_id = user_id;
 
         // Note that stroke order can be different than index due to undoes, so we just add 1 to
-        // the last order 
+        // the last order
         paint_stroke.order = if let Some(last_stroke) = self.paint_strokes.last() {
             last_stroke.order + 1
-        }else{
+        } else {
             0
         };
         let tile_offsets = tile_ops::find_paintstroke_tile_offsets(&paint_stroke);
         self.paint_strokes.push(paint_stroke.clone());
-        let stroke_index = self.paint_strokes.len() - 1; 
+        let stroke_index = self.paint_strokes.len() - 1;
 
         for i in &tile_offsets {
             if let Some(tile) = self.tiles.get_mut(&i) {
@@ -155,14 +153,13 @@ impl Layer {
     /// Undoes actions done by specified user on paint stack. Returns hashset of updated tile
     /// offsets
     pub fn undo(&mut self, user_id: UserId) -> Option<HashSet<Offset>> {
-        let start_idx = if UNDO_SEARCH_DEPTH <= self.paint_strokes.len(){
-            self.paint_strokes.len() - UNDO_SEARCH_DEPTH 
-        }else{
+        let start_idx = if UNDO_SEARCH_DEPTH <= self.paint_strokes.len() {
+            self.paint_strokes.len() - UNDO_SEARCH_DEPTH
+        } else {
             0
         };
 
         for (i, paint_stroke) in self.paint_strokes[start_idx..].iter().rev().enumerate() {
-
             if paint_stroke.user_id == user_id {
                 let tile_offsets = tile_ops::find_paintstroke_tile_offsets(&paint_stroke);
                 self.paint_strokes.remove(i);
@@ -172,8 +169,8 @@ impl Layer {
                             if tile[k] == i {
                                 tile.remove(k);
                                 break;
-                            }else{
-                                tile[k] = tile[k] -1;
+                            } else {
+                                tile[k] = tile[k] - 1;
                             }
                         }
                     }
@@ -215,11 +212,33 @@ pub struct Offset {
     pub x: i32,
     pub y: i32,
 }
-impl std::ops::Add<Offset> for Offset{
+
+impl std::ops::Neg for Offset {
+    type Output = Self;
+    fn neg(self) -> Self {
+        Self {
+            x: -self.x,
+            y: -self.y,
+        }
+    }
+}
+
+impl std::ops::Add<Offset> for Offset {
     type Output = Self;
 
-    fn add(self, rhs: Self) -> Self{
-        Self{
+    fn add(self, rhs: Self) -> Self {
+        Self {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
+}
+
+impl std::ops::Add<&Offset> for &Offset {
+    type Output = Offset;
+
+    fn add(self, rhs: &Offset) -> Offset {
+        Offset {
             x: self.x + rhs.x,
             y: self.y + rhs.y,
         }
@@ -280,6 +299,18 @@ impl std::ops::Add<Offset> for StrokePoint {
     }
 }
 
+impl std::ops::Add<&Offset> for &StrokePoint {
+    type Output = StrokePoint;
+
+    fn add(self, rhs: &Offset) -> StrokePoint {
+        StrokePoint {
+            p: self.p,
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
+}
+
 #[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct PaintStroke {
     pub order: usize,
@@ -288,32 +319,31 @@ pub struct PaintStroke {
     pub points: Vec<StrokePoint>,
 }
 
-impl PaintStroke{
+impl PaintStroke {
+    pub fn shift(&mut self, offset: &Offset) {
+        self.points = self.points.iter().map(|x| x + offset).collect();
+    }
 }
 
-
-
-impl Ord for PaintStroke{
+impl Ord for PaintStroke {
     fn cmp(&self, other: &Self) -> Ordering {
         self.order.cmp(&other.order)
     }
 }
 
-impl PartialOrd for PaintStroke{
+impl PartialOrd for PaintStroke {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-
-impl PartialEq for PaintStroke{
+impl PartialEq for PaintStroke {
     fn eq(&self, other: &Self) -> bool {
         self.order == other.order
     }
 }
 
 impl Eq for PaintStroke {}
-
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum ClientMessage {

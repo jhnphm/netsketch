@@ -4,6 +4,7 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 use yew::format::Binary;
 use yew::prelude::*;
 use yew::services::resize::{ResizeService, ResizeTask};
+use yew::services::timeout::{TimeoutService, TimeoutTask};
 use yew::services::websocket::{WebSocketService, WebSocketStatus, WebSocketTask};
 use yew::services::ConsoleService;
 
@@ -11,8 +12,10 @@ pub struct DrawCanvas {
     link: ComponentLink<Self>,
     /// Reference to <canvas> node
     node_ref: NodeRef,
-    /// Reference to window resize callback
-    resize_task: Option<ResizeTask>,
+    /// Reference to window resize task
+    resize: Option<ResizeTask>,
+    /// Reference to timeout task
+    timeout: Option<TimeoutService>,
     /// Websocket connection
     websocket: Option<WebSocketTask>,
 
@@ -36,6 +39,7 @@ pub enum Msg {
     WsAction(WebSocketStatus),
     ErrMsg(String),
     Resize,
+    UpdateCanvas,
 }
 
 impl DrawCanvas {
@@ -129,7 +133,8 @@ impl Component for DrawCanvas {
         Self {
             link,
             node_ref: NodeRef::default(),
-            resize_task: None,
+            resize: None,
+            timeout: None,
             websocket: None,
 
             draw_context: None,
@@ -155,7 +160,7 @@ impl Component for DrawCanvas {
             // Register callback on window resize to also resize canvas
             // TODO Simplify this by using ResizeService instead
             let cb = self.link.callback(|_| Msg::Resize);
-            self.resize_task = Some(ResizeService::new().register(cb));
+            self.resize = Some(ResizeService::new().register(cb));
 
             // Call resize callback at least once
         }
@@ -202,15 +207,17 @@ impl Component for DrawCanvas {
                 );
                 self.cur_paint_stroke.points.push(cur_point);
 
+                self.cur_paint_stroke.shift(&self.viewport_offset);
+
+                // Create replacement paint stroke
+                let new_stroke = PaintStroke {
+                    order: 0,
+                    user_id: 0,
+                    brush: self.cur_paint_stroke.brush.clone(),
+                    points: Vec::new(),
+                };
                 //Send paint stroke to server
                 if let Some(ws) = self.websocket.as_mut() {
-                    // Create replacement paint stroke
-                    let new_stroke = PaintStroke {
-                        order: 0,
-                        user_id: 0,
-                        brush: self.cur_paint_stroke.brush,
-                        points: Vec::new(),
-                    };
                     let zbincode_msg = netsketch_shared::to_zbincode(&ClientMessage::PaintStroke(
                         0,
                         std::mem::replace(&mut self.cur_paint_stroke, new_stroke),
@@ -221,10 +228,15 @@ impl Component for DrawCanvas {
                         }
                         Err(err) => ConsoleService::error(&err.to_string()),
                     };
+                } else {
+                    self.cur_paint_stroke = new_stroke;
                 }
             }
             Msg::WsReady(server_message) => match server_message {
-                ServerMessage::PaintStroke(layer, paint_stroke) => self.draw_stroke(&paint_stroke),
+                ServerMessage::PaintStroke(layer, mut paint_stroke) => {
+                    paint_stroke.shift(&-self.viewport_offset);
+                    self.draw_stroke(&paint_stroke)
+                }
                 _ => (),
             },
             Msg::WsAction(status) => match status {
@@ -266,6 +278,8 @@ impl Component for DrawCanvas {
                         }
                     }
                 }
+            }
+            Msg::UpdateCanvas => {
             }
             _ => (),
         };
