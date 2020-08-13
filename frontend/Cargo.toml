@@ -28,3 +28,4 @@ web-sys = { version = "^0.3.42", features = [
 rand = {version = "^0.7", features = [
     "wasm-bindgen"
 ]}
+css-in-rust = {version="^0.5.0",features=["yew_integration"]}

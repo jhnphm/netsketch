@@ -1,4 +1,6 @@
+use css_in_rust::style::Style;
 use netsketch_shared::*;
+use std::time::Duration;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 use yew::format::Binary;
@@ -9,13 +11,17 @@ use yew::services::websocket::{WebSocketService, WebSocketStatus, WebSocketTask}
 use yew::services::ConsoleService;
 
 pub struct DrawCanvas {
+    /// Yew ComponentLink
     link: ComponentLink<Self>,
     /// Reference to <canvas> node
     node_ref: NodeRef,
+    /// Style
+    style: Style,
+
     /// Reference to window resize task
     resize: Option<ResizeTask>,
     /// Reference to timeout task
-    timeout: Option<TimeoutService>,
+    timeout: Option<TimeoutTask>,
     /// Websocket connection
     websocket: Option<WebSocketTask>,
 
@@ -39,7 +45,7 @@ pub enum Msg {
     WsAction(WebSocketStatus),
     ErrMsg(String),
     Resize,
-    UpdateCanvas,
+    UpdateCanvas(Offset, Offset),
 }
 
 impl DrawCanvas {
@@ -133,6 +139,8 @@ impl Component for DrawCanvas {
         Self {
             link,
             node_ref: NodeRef::default(),
+            style: get_style(),
+
             resize: None,
             timeout: None,
             websocket: None,
@@ -161,8 +169,6 @@ impl Component for DrawCanvas {
             // TODO Simplify this by using ResizeService instead
             let cb = self.link.callback(|_| Msg::Resize);
             self.resize = Some(ResizeService::new().register(cb));
-
-            // Call resize callback at least once
         }
     }
 
@@ -241,7 +247,7 @@ impl Component for DrawCanvas {
             },
             Msg::WsAction(status) => match status {
                 WebSocketStatus::Opened => {
-                    self.update(Msg::Resize);
+                    self.link.send_message(Msg::Resize);
                 }
                 _ => (),
             },
@@ -265,21 +271,26 @@ impl Component for DrawCanvas {
                                 x: width,
                                 y: height,
                             };
-                        if let Some(ws) = self.websocket.as_mut() {
-                            let viewport = ClientMessage::SetViewPort(upper_left, lower_right);
 
-                            let zbincode_msg = netsketch_shared::to_zbincode(&viewport);
-                            match zbincode_msg {
-                                Ok(data) => {
-                                    ws.send_binary(Ok(data));
-                                }
-                                Err(err) => ConsoleService::error(&err.to_string()),
-                            };
-                        }
+                        let cb = self
+                            .link
+                            .callback(move |_| Msg::UpdateCanvas(upper_left, lower_right));
+                        self.timeout = Some(TimeoutService::spawn(Duration::from_millis(250), cb));
                     }
                 }
             }
-            Msg::UpdateCanvas => {
+            Msg::UpdateCanvas(upper_left, lower_right) => {
+                if let Some(ws) = self.websocket.as_mut() {
+                    let viewport = ClientMessage::SetViewPort(upper_left, lower_right);
+
+                    let zbincode_msg = netsketch_shared::to_zbincode(&viewport);
+                    match zbincode_msg {
+                        Ok(data) => {
+                            ws.send_binary(Ok(data));
+                        }
+                        Err(err) => ConsoleService::error(&err.to_string()),
+                    };
+                }
             }
             _ => (),
         };
@@ -295,15 +306,54 @@ impl Component for DrawCanvas {
 
     fn view(&self) -> Html {
         html! {
-            <div style="width: 100%; height: 100%">
-            <canvas
-                style="display: block; cursor: crosshair"
-                ref=self.node_ref.clone()
-                onpointerdown=self.link.callback(|event: PointerEvent| Msg::PointerDown(event))
-                onpointermove=self.link.callback(|event: PointerEvent| Msg::PointerMove(event))
-                onpointerup=self.link.callback(|event: PointerEvent| Msg::PointerUp(event))
-            />
+            <div class=self.style.clone()>
+                <div>
+                    <button>{"Pan"}</button>
+                    <button>{"Brush"}</button>
+                </div>
+                <div
+                    onpointerdown=self.link.callback(|event: PointerEvent| Msg::PointerDown(event))
+                    onpointermove=self.link.callback(|event: PointerEvent| Msg::PointerMove(event))
+                    onpointerup=self.link.callback(|event: PointerEvent| Msg::PointerUp(event)) >
+
+                    <canvas ref=self.node_ref.clone() />
+
+                </div>
             </div>
+        }
+    }
+}
+fn get_style() -> Style {
+    match Style::create(
+        "DrawCanvas",
+        r#"
+        display: flex; 
+        height: 100%; 
+        width: 100%;
+
+        div:first-child {
+            width: 75px;
+        }
+        div:first-child button {
+            padding: 0px;
+            text-align: center;
+            width: 100%;
+        }
+        div:nth-child(2) {
+            width: 100%;
+            height: 100%;
+        }
+        div:nth-child(2) canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            cursor: crosshair;
+        }
+        "#,
+    ) {
+        Ok(style) => style,
+        Err(error) => {
+            panic!("An error occured while creating the style: {}", error);
         }
     }
 }
