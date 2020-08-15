@@ -257,8 +257,13 @@ pub struct Color {
 pub struct Brush {
     pub color: Color,
     pub width: f32,
+    /// How far to fall off
     pub hardness: f32,
+    /// How much to bleed in from surrounding areas
     pub smudging: f32,
+    /// Set to true to replace colors underneath stroke instead of applying on top
+    /// Useful for erase
+    pub replace: bool, 
 }
 
 impl Default for Brush {
@@ -273,6 +278,7 @@ impl Default for Brush {
             width: 1.0,
             hardness: 1.0,
             smudging: 1.0,
+            replace: false,
         }
     }
 }

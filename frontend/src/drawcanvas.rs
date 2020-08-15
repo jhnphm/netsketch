@@ -35,7 +35,16 @@ pub struct DrawCanvas {
 
     /// Last mousedown state
     pointer_down: bool,
+    ///
+    tool: Tool
 }
+
+pub enum Tool {
+    Pan,
+    Brush,
+    Erase
+}
+
 
 pub enum Msg {
     PointerDown(web_sys::PointerEvent),
@@ -46,6 +55,7 @@ pub enum Msg {
     ErrMsg(String),
     Resize,
     UpdateCanvas(Offset, Offset),
+    UseTool(Tool)
 }
 
 impl DrawCanvas {
@@ -149,6 +159,7 @@ impl Component for DrawCanvas {
             cur_paint_stroke: PaintStroke::default(),
             pointer_down: false,
             viewport_offset: Offset::default(),
+            tool: Tool::Brush
         }
     }
 
@@ -249,6 +260,7 @@ impl Component for DrawCanvas {
                 WebSocketStatus::Opened => {
                     self.link.send_message(Msg::Resize);
                 }
+                //TODO If closed, reconnect
                 _ => (),
             },
             Msg::Resize => {
@@ -310,6 +322,7 @@ impl Component for DrawCanvas {
                 <div>
                     <button>{"Pan"}</button>
                     <button>{"Brush"}</button>
+                    <button>{"Erase"}</button>
                 </div>
                 <div
                     onpointerdown=self.link.callback(|event: PointerEvent| Msg::PointerDown(event))
