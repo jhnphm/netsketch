@@ -2,7 +2,7 @@
 This is a project mostly intended to learn Rust, and to satisfy some itches friends have had with
 other collaborative painting applications (lack of brushes + infinite canvas).
 
-## Initial Design decisions
+## Design decisions
 
 ### Frameworks
 Rust is used on both the frontend (using Yew) and backend (using Warp), in order to allow the use of
@@ -28,3 +28,12 @@ undoing user is found. This is then removed from the main paint stack, as well a
 referencing the former index. All tile indexes to the undone paintstroke have to be updated to
 account for the removed paintstroke.
 
+### Panning (2020-08-19)
+
+Turns out panning is a bit more difficult than envisioned. To smoothly pan we must redraw the canvas
+while panning with a transform. Options are actually redrawing the canvas, which would be
+prohibitively slow if reloaded from the network, redrawing from a local tile cache of the canvas, or
+panning an image snapshot. Canvas `putImage`, however, is prohibitively slow. We can cache the
+canvas onto another canvas and draw from there, using drawImage which is faster. However I'm going
+to redo the backend and implement a local tile cache, as this will be needed as drawings get more
+complex. 
