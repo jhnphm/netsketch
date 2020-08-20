@@ -207,6 +207,8 @@ impl Layer {
     }
 }
 
+pub type Point = Offset;
+
 #[derive(Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone, Copy)]
 pub struct Offset {
     pub x: i32,
@@ -241,6 +243,28 @@ impl std::ops::Add<&Offset> for &Offset {
         Offset {
             x: self.x + rhs.x,
             y: self.y + rhs.y,
+        }
+    }
+}
+
+impl std::ops::Sub<Offset> for Offset {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self {
+        Self {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
+    }
+}
+
+impl std::ops::Sub<&Offset> for &Offset {
+    type Output = Offset;
+
+    fn sub(self, rhs: &Offset) -> Offset {
+        Offset {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
         }
     }
 }

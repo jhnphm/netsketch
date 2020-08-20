@@ -4,6 +4,7 @@ pub use crate::Username;
 pub use crate::ChatMessage;
 pub use crate::StrokeIndex;
 pub use crate::Layer;
+pub use crate::Point;
 pub use crate::Offset;
 pub use crate::Color;
 pub use crate::Brush;

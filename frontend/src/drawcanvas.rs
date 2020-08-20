@@ -25,26 +25,27 @@ pub struct DrawCanvas {
     /// Websocket connection
     websocket: Option<WebSocketTask>,
 
-    /// Reference to CanvasRenderingContext2d
-    draw_context: Option<Box<CanvasRenderingContext2d>>,
-
-    /// Current unsent paint stroke
-    cur_paint_stroke: PaintStroke,
     /// viewport offset
     viewport_offset: Offset,
 
     /// Last mousedown state
     pointer_down: bool,
-    ///
-    tool: Tool
+
+    /// Tool selection
+    tool: Tool,
+
+    /// Pan state
+    start_offset: Offset,
+
+    /// Current unsent paint stroke
+    cur_paint_stroke: PaintStroke,
 }
 
 pub enum Tool {
     Pan,
     Brush,
-    Erase
+    Erase,
 }
-
 
 pub enum Msg {
     PointerDown(web_sys::PointerEvent),
@@ -55,7 +56,7 @@ pub enum Msg {
     ErrMsg(String),
     Resize,
     UpdateCanvas(Offset, Offset),
-    UseTool(Tool)
+    ToolChange(Tool),
 }
 
 impl DrawCanvas {
@@ -76,7 +77,7 @@ impl DrawCanvas {
                 return;
             }
         };
-        let draw_context = match &self.draw_context {
+        let draw_context = match get_draw_context(&self.node_ref){
             Some(draw_context) => draw_context,
             None => {
                 ConsoleService::error("Error getting drawing context");
@@ -155,26 +156,21 @@ impl Component for DrawCanvas {
             timeout: None,
             websocket: None,
 
-            draw_context: None,
-            cur_paint_stroke: PaintStroke::default(),
-            pointer_down: false,
             viewport_offset: Offset::default(),
-            tool: Tool::Brush
+
+            pointer_down: false,
+
+            tool: Tool::Brush,
+
+            start_offset: Offset::default(),
+
+            cur_paint_stroke: PaintStroke::default(),
         }
     }
 
     fn rendered(&mut self, first_render: bool) {
         if first_render {
             self.ws_connect();
-
-            //Get CanvasRenderingContext2d on first render
-            let get_draw_context = || {
-                let canvas = self.node_ref.cast::<HtmlCanvasElement>()?;
-                let draw_context = canvas.get_context("2d").ok()?;
-                let draw_context = draw_context?.dyn_into::<CanvasRenderingContext2d>().ok()?;
-                Some(Box::new(draw_context))
-            };
-            self.draw_context = get_draw_context();
 
             // Register callback on window resize to also resize canvas
             // TODO Simplify this by using ResizeService instead
@@ -187,72 +183,118 @@ impl Component for DrawCanvas {
         match msg {
             Msg::PointerDown(event) => {
                 self.pointer_down = true;
-                let cur_point = StrokePoint {
-                    p: event.pressure(),
-                    x: event.offset_x(),
-                    y: event.offset_y(),
-                };
-                self.cur_paint_stroke.points.push(cur_point);
-                ConsoleService::log(&format!("button {}", event.button()));
+                match self.tool {
+                    Tool::Brush | Tool::Erase => {
+                        let cur_point = StrokePoint {
+                            p: event.pressure(),
+                            x: event.offset_x(),
+                            y: event.offset_y(),
+                        };
+                        self.cur_paint_stroke.points.push(cur_point);
+                    }
+                    Tool::Pan => {
+                        self.start_offset = Point {
+                            x: event.offset_x(),
+                            y: event.offset_y(),
+                        }
+                    }
+                }
             }
             Msg::PointerMove(event) => {
                 if self.pointer_down {
-                    let cur_point = StrokePoint {
-                        p: event.pressure(),
-                        x: event.offset_x(),
-                        y: event.offset_y(),
-                    };
-                    self.draw_line(
-                        &self.cur_paint_stroke.brush,
-                        &self.cur_paint_stroke.points[..],
-                        &cur_point,
-                    );
-                    self.cur_paint_stroke.points.push(cur_point);
+                    match self.tool {
+                        Tool::Brush | Tool::Erase => {
+                            let cur_point = StrokePoint {
+                                p: event.pressure(),
+                                x: event.offset_x(),
+                                y: event.offset_y(),
+                            };
+                            self.draw_line(
+                                &self.cur_paint_stroke.brush,
+                                &self.cur_paint_stroke.points[..],
+                                &cur_point,
+                            );
+                            self.cur_paint_stroke.points.push(cur_point);
+                        }
+                        Tool::Pan => {
+                            self.viewport_offset = Offset {
+                                x: event.offset_x(),
+                                y: event.offset_y(),
+                            } - self.start_offset;
+
+                            ConsoleService::log(&format!("{:?}",self.viewport_offset));
+                        }
+                    }
                 }
             }
             Msg::PointerUp(event) => {
                 self.pointer_down = false;
-                let cur_point = StrokePoint {
-                    p: event.pressure(),
-                    x: event.offset_x(),
-                    y: event.offset_y(),
-                };
-                self.draw_line(
-                    &self.cur_paint_stroke.brush,
-                    &self.cur_paint_stroke.points[..],
-                    &cur_point,
-                );
-                self.cur_paint_stroke.points.push(cur_point);
+                match self.tool {
+                    Tool::Brush | Tool::Erase => {
+                        let cur_point = StrokePoint {
+                            p: event.pressure(),
+                            x: event.offset_x(),
+                            y: event.offset_y(),
+                        };
+                        self.draw_line(
+                            &self.cur_paint_stroke.brush,
+                            &self.cur_paint_stroke.points[..],
+                            &cur_point,
+                        );
+                        self.cur_paint_stroke.points.push(cur_point);
 
-                self.cur_paint_stroke.shift(&self.viewport_offset);
+                        self.cur_paint_stroke.shift(&self.viewport_offset);
 
-                // Create replacement paint stroke
-                let new_stroke = PaintStroke {
-                    order: 0,
-                    user_id: 0,
-                    brush: self.cur_paint_stroke.brush.clone(),
-                    points: Vec::new(),
-                };
-                //Send paint stroke to server
-                if let Some(ws) = self.websocket.as_mut() {
-                    let zbincode_msg = netsketch_shared::to_zbincode(&ClientMessage::PaintStroke(
-                        0,
-                        std::mem::replace(&mut self.cur_paint_stroke, new_stroke),
-                    ));
-                    match zbincode_msg {
-                        Ok(data) => {
-                            ws.send_binary(Ok(data));
+                        // Create replacement paint stroke
+                        let new_stroke = PaintStroke {
+                            order: 0,
+                            user_id: 0,
+                            brush: self.cur_paint_stroke.brush.clone(),
+                            points: Vec::new(),
+                        };
+                        //Send paint stroke to server
+                        if let Some(ws) = self.websocket.as_mut() {
+                            let zbincode_msg =
+                                netsketch_shared::to_zbincode(&ClientMessage::PaintStroke(
+                                    0,
+                                    std::mem::replace(&mut self.cur_paint_stroke, new_stroke),
+                                ));
+                            match zbincode_msg {
+                                Ok(data) => {
+                                    ws.send_binary(Ok(data));
+                                }
+                                Err(err) => ConsoleService::error(&err.to_string()),
+                            };
+                        } else {
+                            self.cur_paint_stroke = new_stroke;
                         }
-                        Err(err) => ConsoleService::error(&err.to_string()),
-                    };
-                } else {
-                    self.cur_paint_stroke = new_stroke;
+                    }
+                    _ => {}
                 }
             }
             Msg::WsReady(server_message) => match server_message {
-                ServerMessage::PaintStroke(layer, mut paint_stroke) => {
-                    paint_stroke.shift(&-self.viewport_offset);
-                    self.draw_stroke(&paint_stroke)
+                ServerMessage::PaintStroke(layer, paint_stroke) => {
+                   // paint_stroke.shift(&-self.viewport_offset);
+                    
+                    if let Some(draw_context) = get_draw_context(&self.node_ref){
+                        let _result = draw_context.set_transform(
+                            1.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                            -self.viewport_offset.x as f64,
+                            -self.viewport_offset.y as f64,
+                        );
+                        self.draw_stroke(&paint_stroke);
+                        let _result = draw_context.set_transform(
+                            1.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0,
+                        );
+                    }
                 }
                 _ => (),
             },
@@ -263,6 +305,9 @@ impl Component for DrawCanvas {
                 //TODO If closed, reconnect
                 _ => (),
             },
+            Msg::ErrMsg(errstring) => {
+                ConsoleService::error(&errstring);
+            }
             Msg::Resize => {
                 let canvas_node = &self.node_ref;
                 if let Some(canvas) = canvas_node.cast::<HtmlCanvasElement>() {
@@ -304,7 +349,9 @@ impl Component for DrawCanvas {
                     };
                 }
             }
-            _ => (),
+            Msg::ToolChange(tool) => {
+                self.tool = tool;
+            }
         };
         false
     }
@@ -320,9 +367,9 @@ impl Component for DrawCanvas {
         html! {
             <div class=self.style.clone()>
                 <div>
-                    <button>{"Pan"}</button>
-                    <button>{"Brush"}</button>
-                    <button>{"Erase"}</button>
+                    <button onclick=self.link.callback(|_|Msg::ToolChange(Tool::Pan))>{"Pan"}</button>
+                    <button onclick=self.link.callback(|_|Msg::ToolChange(Tool::Brush))>{"Brush"}</button>
+                    <button onclick=self.link.callback(|_|Msg::ToolChange(Tool::Erase))>{"Erase"}</button>
                 </div>
                 <div
                     onpointerdown=self.link.callback(|event: PointerEvent| Msg::PointerDown(event))
@@ -386,3 +433,11 @@ fn get_wsaddr() -> Result<String, String> {
     // Generate websocket target
     Ok(format!("{}//{}/ws/{}", wsproto, host, hashval))
 }
+
+fn get_draw_context(canvas: &NodeRef) -> Option<Box<CanvasRenderingContext2d>>{
+    let canvas = canvas.cast::<HtmlCanvasElement>()?;
+    let draw_context = canvas.get_context("2d").ok()?;
+    let draw_context = draw_context?.dyn_into::<CanvasRenderingContext2d>().ok()?;
+    Some(Box::new(draw_context))
+}
+
