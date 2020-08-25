@@ -69,7 +69,7 @@ impl Room {
 
             match data {
                 // Paintstroke received
-                ClientMessage::PaintStroke(layer_id, paint_stroke) => {
+                ClientMessage::PaintStroke(layer_id, mut paint_stroke) => {
                     // Bounds check on layer IDs
                     if layer_id < netsketch_shared::MAX_LAYERS {
                         let mut canvas = self.canvas.write().await;
@@ -83,9 +83,11 @@ impl Room {
                             }
                         };
 
+                        paint_stroke.user_id = user_id;
+
                         // Add stroke to paint stack
                         let (paint_stroke, tile_offsets) =
-                            layer.add_paint_stroke(user_id, paint_stroke);
+                            layer.add_paint_stroke(paint_stroke);
 
                         // Send paint stroke to everyone connected viewing the visible tiles
                         let msg = ServerMessage::PaintStroke(layer_id, paint_stroke);

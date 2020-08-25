@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -107,103 +108,84 @@ pub mod tile_ops {
     }
 }
 
-pub type StrokeIndex = usize;
 
 #[derive(Default, Debug, PartialEq, Clone)]
 pub struct Layer {
-    /// We store userid along w/ paint stroke for the purposes of per-user undo
-    paint_strokes: Vec<PaintStroke>,
-    /// Tile offsets are the upper left-most point
-    /// Tiles contain list of indices in paint_strokes Vec belonging to that tile
-    tiles: HashMap<Offset, Vec<StrokeIndex>>,
+    last_id: PaintStrokeId,
+    paint_strokes: BTreeMap<PaintStrokeId, PaintStroke>,
+    tiles: HashMap<Offset, BTreeSet<PaintStrokeId>>,
 }
 
 impl Layer {
     /// Adds paint stroke to layer and updates tile references, and consumes paint stroke. Returns
-    /// paint stroke updated with order and hashset of updated tile offsets.
+    /// paint stroke updated with id and hashset of updated tile offsets.
     pub fn add_paint_stroke(
         &mut self,
-        user_id: UserId,
         mut paint_stroke: PaintStroke,
     ) -> (PaintStroke, HashSet<Offset>) {
-        paint_stroke.user_id = user_id;
 
-        // Note that stroke order can be different than index due to undoes, so we just add 1 to
-        // the last order
-        paint_stroke.order = if let Some(last_stroke) = self.paint_strokes.last() {
-            last_stroke.order + 1
-        } else {
-            0
-        };
+        // Note that stroke id can be different than index due to undoes, so we just add 1 to
+        // the last id
+        self.last_id +=1; 
+
+        paint_stroke.id = self.last_id;
+
         let tile_offsets = tile_ops::find_paintstroke_tile_offsets(&paint_stroke);
-        self.paint_strokes.push(paint_stroke.clone());
-        let stroke_index = self.paint_strokes.len() - 1;
+
+        self.paint_strokes.insert(paint_stroke.id, paint_stroke.clone());
 
         for i in &tile_offsets {
             if let Some(tile) = self.tiles.get_mut(&i) {
-                tile.push(stroke_index);
+                tile.insert(paint_stroke.id);
             } else {
-                let mut tile: Vec<StrokeIndex> = Vec::new();
-                tile.push(stroke_index);
+                let mut tile: BTreeSet<PaintStrokeId> = BTreeSet::new();
+                tile.insert(paint_stroke.id);
                 self.tiles.insert(*i, tile);
             }
         }
         return (paint_stroke, tile_offsets);
     }
-    /// Undoes actions done by specified user on paint stack. Returns hashset of updated tile
-    /// offsets
-    pub fn undo(&mut self, user_id: UserId) -> Option<HashSet<Offset>> {
-        let start_idx = if UNDO_SEARCH_DEPTH <= self.paint_strokes.len() {
-            self.paint_strokes.len() - UNDO_SEARCH_DEPTH
-        } else {
-            0
-        };
-
-        for (i, paint_stroke) in self.paint_strokes[start_idx..].iter().rev().enumerate() {
-            if paint_stroke.user_id == user_id {
-                let tile_offsets = tile_ops::find_paintstroke_tile_offsets(&paint_stroke);
-                self.paint_strokes.remove(i);
-                for j in &tile_offsets {
-                    if let Some(tile) = self.tiles.get_mut(&j) {
-                        for k in (0..tile.len()).rev() {
-                            if tile[k] == i {
-                                tile.remove(k);
-                                break;
-                            } else {
-                                tile[k] = tile[k] - 1;
-                            }
-                        }
-                    }
-                }
-                return Some(tile_offsets);
-            }
-        }
-        return None;
-    }
+//    /// Undoes actions done by specified user on paint stack. Returns hashset of updated tile
+//    /// offsets
+//    pub fn undo(&mut self, user_id: UserId) -> Option<HashSet<Offset>> {
+//        let start_idx = if UNDO_SEARCH_DEPTH <= self.paint_strokes.len() {
+//            self.paint_strokes.len() - UNDO_SEARCH_DEPTH
+//        } else {
+//            0
+//        };
+//
+//        for (i, paint_stroke) in self.paint_strokes[start_idx..].iter().rev().enumerate() {
+//            if paint_stroke.user_id == user_id {
+//                let tile_offsets = tile_ops::find_paintstroke_tile_offsets(&paint_stroke);
+//                self.paint_strokes.remove(i);
+//                for j in &tile_offsets {
+//                    if let Some(tile) = self.tiles.get_mut(&j) {
+//                        for k in (0..tile.len()).rev() {
+//                            if tile[k] == i {
+//                                tile.remove(k);
+//                                break;
+//                            } else {
+//                                tile[k] = tile[k] - 1;
+//                            }
+//                        }
+//                    }
+//                }
+//                return Some(tile_offsets);
+//            }
+//        }
+//        return None;
+//    }
 
     /// Gets all strokes belonging to a tile
     pub fn get_tile_paintstrokes(&self, tile_offset: &Offset) -> BTreeSet<PaintStroke> {
-        self.get_tile_paintstrokes_to_depth(tile_offset, usize::MAX)
-    }
-    /// Gets `max_depth` number of paintstrokes belonging to a tile
-    pub fn get_tile_paintstrokes_to_depth(
-        &self,
-        tile_offset: &Offset,
-        max_depth: usize,
-    ) -> BTreeSet<PaintStroke> {
         if let Some(tile) = self.tiles.get(tile_offset) {
-            let start_idx = if max_depth <= tile.len() {
-                tile.len() - max_depth
-            } else {
-                0
-            };
-            tile[start_idx..]
-                .iter()
-                .map(|x| self.paint_strokes[*x].clone())
+            tile.iter()
+                .map(|x| self.paint_strokes.get(&x).unwrap().clone())
                 .collect()
         } else {
             BTreeSet::new()
         }
+
     }
 }
 
@@ -341,9 +323,11 @@ impl std::ops::Add<&Offset> for &StrokePoint {
     }
 }
 
+pub type PaintStrokeId = usize;
+
 #[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct PaintStroke {
-    pub order: usize,
+    pub id: PaintStrokeId,
     pub user_id: UserId,
     pub brush: Brush,
     pub points: Vec<StrokePoint>,
@@ -357,7 +341,7 @@ impl PaintStroke {
 
 impl Ord for PaintStroke {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.order.cmp(&other.order)
+        self.id.cmp(&other.id)
     }
 }
 
@@ -369,7 +353,7 @@ impl PartialOrd for PaintStroke {
 
 impl PartialEq for PaintStroke {
     fn eq(&self, other: &Self) -> bool {
-        self.order == other.order
+        self.id == other.id
     }
 }
 
