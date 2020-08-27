@@ -247,7 +247,7 @@ impl Component for DrawCanvas {
 
                         // Create replacement paint stroke
                         let new_stroke = PaintStroke {
-                            order: 0,
+                            id: 0,
                             user_id: 0,
                             brush: self.cur_paint_stroke.brush.clone(),
                             points: Vec::new(),
