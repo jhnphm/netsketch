@@ -2,7 +2,7 @@ use css_in_rust::style::Style;
 use netsketch_shared::*;
 use std::time::Duration;
 use wasm_bindgen::JsCast;
-use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
+use web_sys::{Element, CanvasRenderingContext2d, HtmlCanvasElement};
 use yew::format::Binary;
 use yew::prelude::*;
 use yew::services::resize::{ResizeService, ResizeTask};
@@ -14,7 +14,7 @@ pub struct DrawCanvas {
     /// Yew ComponentLink
     link: ComponentLink<Self>,
     /// Reference to <canvas> node
-    node_ref: NodeRef,
+    canvases_node_ref: NodeRef,
     /// Style
     style: Style,
 
@@ -39,6 +39,9 @@ pub struct DrawCanvas {
 
     /// Current unsent paint stroke
     cur_paint_stroke: PaintStroke,
+
+    /// Active layer
+    active_layer: LayerId
 }
 
 pub enum Tool {
@@ -60,24 +63,25 @@ pub enum Msg {
 }
 
 impl DrawCanvas {
-    fn draw_stroke(&self, paint_stroke: &PaintStroke) {
+    fn draw_stroke(&self, layer_id: LayerId, paint_stroke: &PaintStroke) {
         for i in 1..paint_stroke.points.len() {
             self.draw_line(
+                layer_id,
                 &paint_stroke.brush,
                 &paint_stroke.points[0..i],
                 &paint_stroke.points[i],
             );
         }
     }
-    fn draw_line(&self, _: &Brush, prev_points: &[StrokePoint], cur_point: &StrokePoint) {
-        let canvas = match self.node_ref.cast::<HtmlCanvasElement>() {
+    fn draw_line(&self, layer_id: LayerId, _: &Brush, prev_points: &[StrokePoint], cur_point: &StrokePoint) {
+        let canvas = match self.get_canvas(layer_id) {
             Some(canvas) => canvas,
             None => {
                 ConsoleService::error("Error getting canvas");
                 return;
             }
         };
-        let draw_context = match get_draw_context(&self.node_ref){
+        let draw_context = match self.get_draw_context(layer_id){
             Some(draw_context) => draw_context,
             None => {
                 ConsoleService::error("Error getting drawing context");
@@ -142,6 +146,21 @@ impl DrawCanvas {
             ConsoleService::error("Unable to determine websocket host");
         }
     }
+    fn get_canvas(&self, layer_id: LayerId) -> Option<Box<HtmlCanvasElement>>{
+        let node = self.canvases_node_ref.get()?;
+        let element = node.dyn_into::<Element>().ok()?;
+        let layers = element.children();
+    
+        let canvas = layers.item(layer_id as u32)?;
+        let canvas = canvas.dyn_into::<HtmlCanvasElement>().ok()?;
+        Some(Box::new(canvas))
+    }
+    fn get_draw_context(&self, layer_id: LayerId) -> Option<Box<CanvasRenderingContext2d>>{
+        let canvas = self.get_canvas(layer_id)?;
+        let draw_context = canvas.get_context("2d").ok()?;
+        let draw_context = draw_context?.dyn_into::<CanvasRenderingContext2d>().ok()?;
+        Some(Box::new(draw_context))
+    }
 }
 impl Component for DrawCanvas {
     type Message = Msg;
@@ -149,7 +168,7 @@ impl Component for DrawCanvas {
     fn create(_: Self::Properties, link: ComponentLink<Self>) -> Self {
         Self {
             link,
-            node_ref: NodeRef::default(),
+            canvases_node_ref: NodeRef::default(),
             style: get_style(),
 
             resize: None,
@@ -165,6 +184,8 @@ impl Component for DrawCanvas {
             start_offset: Offset::default(),
 
             cur_paint_stroke: PaintStroke::default(),
+
+            active_layer: 0
         }
     }
 
@@ -210,6 +231,7 @@ impl Component for DrawCanvas {
                                 y: event.offset_y(),
                             };
                             self.draw_line(
+                                self.active_layer,
                                 &self.cur_paint_stroke.brush,
                                 &self.cur_paint_stroke.points[..],
                                 &cur_point,
@@ -237,6 +259,7 @@ impl Component for DrawCanvas {
                             y: event.offset_y(),
                         };
                         self.draw_line(
+                            self.active_layer,
                             &self.cur_paint_stroke.brush,
                             &self.cur_paint_stroke.points[..],
                             &cur_point,
@@ -276,7 +299,7 @@ impl Component for DrawCanvas {
                 ServerMessage::PaintStroke(layer, paint_stroke) => {
                    // paint_stroke.shift(&-self.viewport_offset);
                     
-                    if let Some(draw_context) = get_draw_context(&self.node_ref){
+                    if let Some(draw_context) = self.get_draw_context(layer){
                         let _result = draw_context.set_transform(
                             1.0,
                             0.0,
@@ -285,7 +308,7 @@ impl Component for DrawCanvas {
                             -self.viewport_offset.x as f64,
                             -self.viewport_offset.y as f64,
                         );
-                        self.draw_stroke(&paint_stroke);
+                        self.draw_stroke(layer, &paint_stroke);
                         let _result = draw_context.set_transform(
                             1.0,
                             0.0,
@@ -309,31 +332,35 @@ impl Component for DrawCanvas {
                 ConsoleService::error(&errstring);
             }
             Msg::Resize => {
-                let canvas_node = &self.node_ref;
-                if let Some(canvas) = canvas_node.cast::<HtmlCanvasElement>() {
-                    if let Some(canvas_parent) = canvas.parent_element() {
-                        let width = canvas_parent.client_width() as i32;
-                        let height = canvas_parent.client_height() as i32;
-                        canvas.set_width(width as u32);
-                        canvas.set_height(height as u32);
+                if let Some(canvas_parent) = self.canvases_node_ref.cast::<Element>() {
+                    let width = canvas_parent.client_width();
+                    let height = canvas_parent.client_height();
+                    let layers = canvas_parent.children();
+                    for i in 0..layers.length(){
+                        if let Some(canvas) = layers.item(i){
+                            if let Some(canvas) = canvas.dyn_into::<HtmlCanvasElement>().ok(){
+                                canvas.set_width(width as u32);
+                                canvas.set_height(height as u32);
+                            }
+                        }
 
-                        self.viewport_offset = Offset {
-                            x: -width / 2,
-                            y: -height / 2,
+                    }
+                    self.viewport_offset = Offset {
+                        x: -width / 2,
+                        y: -height / 2,
+                    };
+
+                    let upper_left = self.viewport_offset;
+                    let lower_right = self.viewport_offset
+                        + Offset {
+                            x: width,
+                            y: height,
                         };
 
-                        let upper_left = self.viewport_offset;
-                        let lower_right = self.viewport_offset
-                            + Offset {
-                                x: width,
-                                y: height,
-                            };
-
-                        let cb = self
-                            .link
-                            .callback(move |_| Msg::UpdateCanvas(upper_left, lower_right));
-                        self.timeout = Some(TimeoutService::spawn(Duration::from_millis(250), cb));
-                    }
+                    let cb = self
+                        .link
+                        .callback(move |_| Msg::UpdateCanvas(upper_left, lower_right));
+                    self.timeout = Some(TimeoutService::spawn(Duration::from_millis(250), cb));
                 }
             }
             Msg::UpdateCanvas(upper_left, lower_right) => {
@@ -374,10 +401,10 @@ impl Component for DrawCanvas {
                 <div
                     onpointerdown=self.link.callback(|event: PointerEvent| Msg::PointerDown(event))
                     onpointermove=self.link.callback(|event: PointerEvent| Msg::PointerMove(event))
-                    onpointerup=self.link.callback(|event: PointerEvent| Msg::PointerUp(event)) >
-
-                    <canvas ref=self.node_ref.clone() />
-
+                    onpointerup=self.link.callback(|event: PointerEvent| Msg::PointerUp(event)) 
+                    ref=self.canvases_node_ref.clone()
+                >
+                    <canvas  />
                 </div>
             </div>
         }
@@ -390,6 +417,7 @@ fn get_style() -> Style {
         display: flex; 
         height: 100%; 
         width: 100%;
+        cursor: crosshair;
 
         div:first-child {
             width: 75px;
@@ -407,7 +435,6 @@ fn get_style() -> Style {
             width: 100%;
             height: 100%;
             display: block;
-            cursor: crosshair;
         }
         "#,
     ) {
@@ -434,10 +461,4 @@ fn get_wsaddr() -> Result<String, String> {
     Ok(format!("{}//{}/ws/{}", wsproto, host, hashval))
 }
 
-fn get_draw_context(canvas: &NodeRef) -> Option<Box<CanvasRenderingContext2d>>{
-    let canvas = canvas.cast::<HtmlCanvasElement>()?;
-    let draw_context = canvas.get_context("2d").ok()?;
-    let draw_context = draw_context?.dyn_into::<CanvasRenderingContext2d>().ok()?;
-    Some(Box::new(draw_context))
-}
 
