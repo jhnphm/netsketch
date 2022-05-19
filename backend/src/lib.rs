@@ -22,7 +22,7 @@ pub struct Room {
     pub room_id: usize,
     connections: RwLock<HashMap<UserId, Connection>>,
     //chat_messages: RwLock<Vec<(Username, ChatMessage)>>,
-    canvas: RwLock<Vec<Layer>>,
+    canvas: RwLock<Vec<ServerLayer>>,
 }
 
 macro_rules! room_eprintln{
@@ -78,7 +78,7 @@ impl Room {
                         let layer = match canvas.get_mut(layer_id as usize) {
                             Some(layer) => layer,
                             None => {
-                                canvas.resize(layer_id as usize + 1, Layer::default());
+                                canvas.resize(layer_id as usize + 1, ServerLayer::default());
                                 &mut canvas[layer_id as usize]
                             }
                         };
@@ -90,14 +90,18 @@ impl Room {
                             layer.add_paint_stroke(paint_stroke);
 
                         // Send paint stroke to everyone connected viewing the visible tiles
-                        let msg = ServerMessage::PaintStroke(layer_id, (*paint_stroke).clone());
+                        let msg = if user_id != *their_user_id {
+                            ServerMessage::PaintStroke(layer_id, (*paint_stroke).clone());
+                        }else{
+                            ServerMessage::PaintStrokeEcho(layer_id, (*paint_stroke).clone());
+                        }
+
                         let zbincode_msg = netsketch_shared::to_zbincode(&msg);
 
                         match zbincode_msg {
                             Ok(msg) => {
                                 for (their_user_id, conn) in self.connections.read().await.iter() {
-                                    if user_id != *their_user_id
-                                        && tile_offsets
+                                    if  tile_offsets
                                             .intersection(&conn.active_tile_offsets)
                                             .count()
                                             != 0

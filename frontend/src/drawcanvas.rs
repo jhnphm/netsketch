@@ -27,6 +27,7 @@ pub struct DrawCanvas {
 
     /// viewport offset
     viewport_offset: Offset,
+    viewport_tile_offsets: HashSet<Offset>,
 
     /// Last mousedown state
     pointer_down: bool,
@@ -41,7 +42,10 @@ pub struct DrawCanvas {
     cur_paint_stroke: PaintStroke,
 
     /// Active layer
-    active_layer: LayerId
+    active_layer: LayerId,
+    /// Layers
+    layers: Vec<ClientLayer>
+
 }
 
 pub enum Tool {
@@ -176,6 +180,7 @@ impl Component for DrawCanvas {
             websocket: None,
 
             viewport_offset: Offset::default(),
+            viewport_tile_offsets: HashSet::new(),
 
             pointer_down: false,
 
@@ -318,6 +323,10 @@ impl Component for DrawCanvas {
                             0.0,
                         );
                     }
+                    self.layers[layer].add_paint_stroke(paint_stroke);
+                }
+                ServerMessage::PaintStrokeEcho(layer, paint_stroke) => {
+                    self.layers[layer].add_paint_stroke(paint_stroke);
                 }
                 _ => (),
             },
@@ -350,12 +359,14 @@ impl Component for DrawCanvas {
                         y: -height / 2,
                     };
 
+
                     let upper_left = self.viewport_offset;
                     let lower_right = self.viewport_offset
                         + Offset {
                             x: width,
                             y: height,
                         };
+
 
                     let cb = self
                         .link
@@ -364,6 +375,7 @@ impl Component for DrawCanvas {
                 }
             }
             Msg::UpdateCanvas(upper_left, lower_right) => {
+                let new_viewport_tile_offsets = netsketch_shared::tile_ops::compute_bounded_tile_offsets
                 if let Some(ws) = self.websocket.as_mut() {
                     let viewport = ClientMessage::SetViewPort(upper_left, lower_right);
 

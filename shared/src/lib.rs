@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::rc::Rc;
 
 pub mod prelude;
 
@@ -108,9 +109,8 @@ pub mod tile_ops {
     }
 }
 
-
 #[derive(Default, Debug, PartialEq, Clone)]
-pub struct Layer {
+pub struct ClientLayer {
     tiles: HashMap<Offset, BTreeSet<Arc<PaintStroke>>>,
     last_id: PaintStrokeId
 }
@@ -171,6 +171,142 @@ impl Layer {
 
     /// Gets all strokes belonging to a tile
     pub fn get_tile_paintstrokes(&self, tile_offset: &Offset) -> BTreeSet<Arc<PaintStroke>> {
+        if let Some(tile) = self.tiles.get(tile_offset) {
+            tile.clone()
+        } else {
+            BTreeSet::new()
+        }
+    }
+}
+
+#[derive(Default, Debug, PartialEq, Clone)]
+pub struct ServerLayer {
+    tiles: HashMap<Offset, BTreeSet<Arc<PaintStroke>>>,
+    last_id: PaintStrokeId
+}
+
+impl ServerLayer {
+    pub fn add_paint_stroke(
+        &mut self,
+        mut paint_stroke: PaintStroke,
+    ) -> (Arc<PaintStroke>, HashSet<Offset>) {
+        self.last_id += 1;
+        paint_stroke.id = self.last_id;
+
+        let paint_stroke = Arc::new(paint_stroke);
+
+        let tile_offsets = tile_ops::find_paintstroke_tile_offsets(&paint_stroke);
+
+        for i in &tile_offsets {
+            if let Some(tile) = self.tiles.get_mut(&i) {
+                tile.insert(paint_stroke.clone());
+            } else {
+                let mut tile: BTreeSet<Arc<PaintStroke>> = BTreeSet::new();
+                tile.insert(paint_stroke.clone());
+                self.tiles.insert(*i, tile);
+            }
+        }
+        return (paint_stroke, tile_offsets);
+    }
+    // /// Undoes actions done by specified user on paint stack. Returns hashset of updated tile
+    // /// offsets
+    // pub fn undo(&mut self, user_id: UserId) -> Option<HashSet<Offset>> {
+    //     let start_idx = if UNDO_SEARCH_DEPTH <= self.paint_strokes.len() {
+    //         self.paint_strokes.len() - UNDO_SEARCH_DEPTH
+    //     } else {
+    //         0
+    //     };
+
+    //     for (i, paint_stroke) in self.paint_strokes[start_idx..].iter().rev().enumerate() {
+    //         if paint_stroke.user_id == user_id {
+    //             let tile_offsets = tile_ops::find_paintstroke_tile_offsets(&paint_stroke);
+    //             self.paint_strokes.remove(i);
+    //             for j in &tile_offsets {
+    //                 if let Some(tile) = self.tiles.get_mut(&j) {
+    //                     for k in (0..tile.len()).rev() {
+    //                         if tile[k] == i {
+    //                             tile.remove(k);
+    //                             break;
+    //                         } else {
+    //                             tile[k] = tile[k] - 1;
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //             return Some(tile_offsets);
+    //         }
+    //     }
+    //     return None;
+    // }
+
+    /// Gets all strokes belonging to a tile
+    pub fn get_tile_paintstrokes(&self, tile_offset: &Offset) -> BTreeSet<Arc<PaintStroke>> {
+        if let Some(tile) = self.tiles.get(tile_offset) {
+            tile.clone()
+        } else {
+            BTreeSet::new()
+        }
+    }
+}
+#[derive(Default, Debug, PartialEq, Clone)]
+pub struct ClientLayer {
+    tiles: HashMap<Offset, BTreeSet<Rc<PaintStroke>>>,
+    last_id: PaintStrokeId
+}
+
+impl ClientLayer {
+    pub fn add_paint_stroke(
+        &mut self,
+        mut paint_stroke: PaintStroke,
+    ) -> (Rc<PaintStroke>, HashSet<Offset>) {
+        let paint_stroke = Rc::new(paint_stroke);
+
+        let tile_offsets = tile_ops::find_paintstroke_tile_offsets(&paint_stroke);
+
+        for i in &tile_offsets {
+            if let Some(tile) = self.tiles.get_mut(&i) {
+                tile.insert(paint_stroke.clone());
+            } else {
+                let mut tile: BTreeSet<Rc<PaintStroke>> = BTreeSet::new();
+                tile.insert(paint_stroke.clone());
+                self.tiles.insert(*i, tile);
+            }
+        }
+        return (paint_stroke, tile_offsets);
+    }
+    // /// Undoes actions done by specified user on paint stack. Returns hashset of updated tile
+    // /// offsets
+    // pub fn undo(&mut self, user_id: UserId) -> Option<HashSet<Offset>> {
+    //     let start_idx = if UNDO_SEARCH_DEPTH <= self.paint_strokes.len() {
+    //         self.paint_strokes.len() - UNDO_SEARCH_DEPTH
+    //     } else {
+    //         0
+    //     };
+
+    //     for (i, paint_stroke) in self.paint_strokes[start_idx..].iter().rev().enumerate() {
+    //         if paint_stroke.user_id == user_id {
+    //             let tile_offsets = tile_ops::find_paintstroke_tile_offsets(&paint_stroke);
+    //             self.paint_strokes.remove(i);
+    //             for j in &tile_offsets {
+    //                 if let Some(tile) = self.tiles.get_mut(&j) {
+    //                     for k in (0..tile.len()).rev() {
+    //                         if tile[k] == i {
+    //                             tile.remove(k);
+    //                             break;
+    //                         } else {
+    //                             tile[k] = tile[k] - 1;
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //             return Some(tile_offsets);
+    //         }
+    //     }
+    //     return None;
+    // }
+
+    /// Gets all strokes belonging to a tile
+    pub fn get_tile_paintstrokes(&self, tile_offset: &Offset) -> BTreeSet<Rc<PaintStroke>> {
         if let Some(tile) = self.tiles.get(tile_offset) {
             tile.clone()
         } else {
@@ -355,12 +491,12 @@ pub enum ClientMessage {
     SetViewPort(Offset, Offset),
     ChatMessage(String),
     UndoMessage,
-    FetchTile(LayerId, Offset),
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum ServerMessage {
     PaintStroke(LayerId, PaintStroke),
+    PaintStrokeEcho(LayerId, PaintStroke),
     ChatMessage(Username, String),
 }
 
